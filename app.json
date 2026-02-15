@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "GOGOMA",
+    "slug": "gogoma",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./src/assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050507"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gogoma",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "O GOGOMA usa sua localização para enviar socorro imediato em caso de emergência.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "O GOGOMA precisa da sua localização para garantir que a ajuda chegue ao local exato, mesmo se o app for minimizado após o alerta."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/adaptive-icon.png",
+        "backgroundColor": "#050507"
+      },
+      "package": "com.gogoma",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "FOREGROUND_SERVICE",
+        "INTERNET",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow"
+        }
+      ],
+      [
+        "expo-notifications",
+        {}
+      ],
+      [
+        "expo-av",
+        {}
+      ]
+    ],
+    "web": {
+      "favicon": "./src/assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4602389c-b12e-46d5-96b1-e03713ad4468"
+      }
+    },
+    "owner": "akademictv"
+  }
+}
