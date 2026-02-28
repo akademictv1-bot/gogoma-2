@@ -39,4 +39,6 @@ export interface EmergencyAlert {
     province?: string;
     district?: string;
     neighborhood?: string;
+    dataAtualizacao?: number;
+    isLowAccuracy?: boolean;
 }

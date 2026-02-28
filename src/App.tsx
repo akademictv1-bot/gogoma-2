@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, Text, SafeAreaView, StatusBar } from 'react-native';
+import React, { useState, useEffect, Component } from 'react';
+import { View, TouchableOpacity, Text, SafeAreaView, StatusBar, Alert } from 'react-native';
 import { Smartphone, Siren, Wifi, WifiOff } from 'lucide-react-native';
 import tw from 'twrnc';
 
@@ -10,7 +10,35 @@ import { db } from './services/firebase';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from './types';
 
-const App: React.FC = () => {
+interface EBProps {
+    children: React.ReactNode;
+}
+
+interface EBState {
+    hasError: boolean;
+    error: any;
+}
+
+class ErrorBoundary extends Component<EBProps, EBState> {
+    constructor(props: EBProps) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error: any) { return { hasError: true, error }; }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <View style={[tw`flex-1 justify-center items-center bg-[#050507] p-10`]}>
+                    <Text style={tw`text-red-500 font-black text-2xl uppercase`}>CRASH DETECTADO!</Text>
+                    <Text style={tw`text-white mt-4 text-center font-bold`}>{this.state.error?.toString()}</Text>
+                </View>
+            );
+        }
+        return this.props.children;
+    }
+}
+
+const AppContent: React.FC = () => {
     const [showSplash, setShowSplash] = useState(true);
     const [viewMode, setViewMode] = useState<'citizen' | 'police'>('citizen');
     const [isOnline, setIsOnline] = useState(true);
@@ -23,14 +51,16 @@ const App: React.FC = () => {
             setShowSplash(false);
         }, 3000);
 
-        // Escutar Alertas em tempo real
         try {
+            console.log("[Sync] Iniciando listener de pedidos SOS...");
             const q = query(collection(db, 'emergencias'), orderBy('timestamp', 'desc'));
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
+                console.log(`[Sync] ${docs.length} alertas recebidos.`);
                 setAlerts(docs);
-            }, (error) => {
-                // Subscription error
+            }, (error: any) => {
+                console.error("[Sync] Erro no Firestore:", error);
+                Alert.alert("Erro de Sincronização", `Falha ao carregar alertas: ${error.message}\nVerifique as Regras do Firestore.`);
             });
 
             return () => {
@@ -38,7 +68,7 @@ const App: React.FC = () => {
                 unsubscribe();
             };
         } catch (error) {
-            // Error in useEffect
+            console.error("Effect error:", error);
         }
     }, []);
 
@@ -56,8 +86,9 @@ const App: React.FC = () => {
                     <Siren size={64} color="#ef4444" />
                 </View>
                 <Text style={[tw`text-6xl font-black tracking-tighter mb-2 uppercase`, { color: NEON_YELLOW }]}>GOGOMA</Text>
-                <Text style={tw`text-[10px] text-slate-500 font-bold tracking-[0.3em] uppercase mb-6`}>RESPOSTA DE EMERGÊNCIA</Text>
-                <Text style={tw`text-[8px] text-slate-700 font-bold uppercase mt-10`}>Toque para saltar (Debug)</Text>
+                <Text style={tw`text-[10px] text-slate-500 font-black tracking-[0.3em] uppercase mb-1`}>RESPOSTA DE EMERGÊNCIA</Text>
+                <Text style={tw`text-[12px] text-white font-black uppercase tracking-[0.1em]`}>Município de Chimoio</Text>
+                <Text style={tw`text-[8px] text-slate-700 font-bold uppercase mt-10`}>Toque para saltar</Text>
             </TouchableOpacity>
         );
     }
@@ -66,7 +97,6 @@ const App: React.FC = () => {
         <SafeAreaView style={tw`flex-1 bg-black`}>
             <StatusBar barStyle="light-content" />
 
-            {/* Barra de Navegação Superior (Nativa) */}
             <View style={tw`bg-[#0a0a0c] p-3 flex-row justify-between items-center border-b border-white/5`}>
                 <View style={tw`flex-row items-center gap-2`}>
                     <TouchableOpacity
@@ -108,4 +138,11 @@ const App: React.FC = () => {
     );
 };
 
+const App = () => (
+    <ErrorBoundary>
+        <AppContent />
+    </ErrorBoundary>
+);
+
 export default App;
+

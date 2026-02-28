@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Expo
+.expo/
+web-build/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +26,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Temporary debug logs
+doctor_output.txt
+web_bundle_log.txt
+web_export_log.txt

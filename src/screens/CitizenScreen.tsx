@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert, Linking, Platform, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, ArrowLeft } from 'lucide-react-native';
 import tw from 'twrnc';
 
@@ -11,6 +11,7 @@ import { db } from '../services/firebase';
 import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc } from 'firebase/firestore';
 import { getCurrentLocation, watchLocation } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
+import { validateMozambiquePhone } from '../services/cryptoUtils';
 import { sendPushNotification } from '../services/notificationService';
 
 import { EmergencyType, AlertStatus, UserProfile } from '../types';
@@ -45,55 +46,86 @@ const CitizenScreen: React.FC = () => {
 
     const NEON_YELLOW = "#fbff00";
 
+    const [configLoaded, setConfigLoaded] = useState(false);
+
     useEffect(() => {
-        // Config do Município
+        // 1. CARREGAMENTO IMEDIATO DO CACHE LOCAL (Instante 0)
+        // Isso garante que o número de telefone correto apareça mesmo sem internet
+        const loadCache = async () => {
+            try {
+                const [cachedConfig, savedProfile] = await Promise.all([
+                    getUserSession('gogoma_config_cache'),
+                    getUserSession('gogoma_user_profile')
+                ]);
+
+                if (cachedConfig) {
+                    if (cachedConfig.logoUrl) setMunicipioLogo(cachedConfig.logoUrl);
+                    if (cachedConfig.helpPhone) setHelpPhone(cachedConfig.helpPhone);
+                    if (cachedConfig.helpText) setHelpText(cachedConfig.helpText);
+                }
+
+                if (savedProfile) {
+                    setProfile(savedProfile);
+                    setIsRegistered(true);
+                }
+                setConfigLoaded(true);
+            } catch (e) {
+                console.error("Erro ao carregar cache inicial:", e);
+                setConfigLoaded(true);
+            }
+        };
+        loadCache();
+
+        // 2. CONFIGURAÇÃO REMOTA (Firestore + Listener)
         const docRef = doc(db, 'configuracoes', 'geral');
-        const unsubConfig = onSnapshot(docRef, (docSnap) => {
+        const unsubConfig = onSnapshot(docRef, async (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (data.logoUrl) setMunicipioLogo(data.logoUrl);
-                if (data.helpPhone) setHelpPhone(data.helpPhone);
+                if (data.helpPhone) setHelpPhone(data.helpPhone); // Prioridade máxima se vier do server
                 if (data.helpText) setHelpText(data.helpText);
+
+                // Atualizar cache apenas com dados válidos
+                if (data.helpPhone || data.logoUrl) {
+                    await saveUserSession('gogoma_config_cache', data);
+                }
             }
         });
 
-        // Check saved session
-        const checkSession = async () => {
-            const saved = await getUserSession('gogoma_user_profile');
-            if (saved) {
-                setProfile(saved);
-                setIsRegistered(true);
-            }
-        };
-        checkSession();
-
-        // Location com MÁXIMA PRECISÃO
-        let locationUnsub: any;
-        const startTracking = async () => {
+        // 3. LOCALIZAÇÃO PERSISTENTE (Watch)
+        let locationSubscription: any = null;
+        const startWatching = async () => {
             try {
-                const loc = await getCurrentLocation();
-                setLocation(loc);
-                setGpsAccuracy(loc.accuracy);
-                setLastGpsUpdate(Date.now());
-
-                // Determinar qualidade inicial
-                updateGpsQuality(loc.accuracy);
-
-                locationUnsub = await watchLocation((newLoc) => {
-                    setLocation(newLoc);
-                    setGpsAccuracy(newLoc.accuracy);
+                // Get initial location
+                const initialLoc = await getCurrentLocation();
+                if (initialLoc) {
+                    setLocation(initialLoc);
+                    setGpsAccuracy(initialLoc.accuracy);
                     setLastGpsUpdate(Date.now());
-                    updateGpsQuality(newLoc.accuracy);
+                    updateGpsQuality(initialLoc.accuracy);
+                }
+
+                // Start watching
+                locationSubscription = await watchLocation((newLoc) => {
+                    if (newLoc) {
+                        setLocation(newLoc);
+                        setGpsAccuracy(newLoc.accuracy);
+                        setLastGpsUpdate(Date.now());
+                        updateGpsQuality(newLoc.accuracy);
+                    }
                 });
             } catch (err) {
                 setGpsDenied(true);
+                console.error("Erro GPS:", err);
             }
         };
-        startTracking();
+        startWatching();
 
         return () => {
             unsubConfig();
-            if (locationUnsub?.remove) locationUnsub.remove();
+            if (locationSubscription && locationSubscription.remove) {
+                locationSubscription.remove();
+            }
         };
     }, []);
 
@@ -120,8 +152,8 @@ const CitizenScreen: React.FC = () => {
             setErrorMsg("O nome é obrigatório.");
             return;
         }
-        if (regPhone.length < 9) {
-            setErrorMsg("O número de telemóvel deve ter pelo menos 9 dígitos.");
+        if (!validateMozambiquePhone(regPhone)) {
+            setErrorMsg("Número inválido. Use 9 dígitos começando por 82, 83, 84, 85, 86 ou 87.");
             return;
         }
 
@@ -170,33 +202,34 @@ const CitizenScreen: React.FC = () => {
 
         const currentAccuracy = gpsAccuracy || 999;
 
-        // Se o GPS está bom (< 30m), envia direto sem perguntar nada para ser o mais rápido possível
+        // Se o GPS está bom (< 30m), envia direto para ser ultra-rápido
         if (location && location.lat !== 0 && currentAccuracy <= 30) {
-            await sendSOSAlert();
+            await sendSOSAlert(false); // isLowAccuracy = false
             return;
         }
 
-        // Se o GPS está ruim ou negado, pergunta mas já oferece a opção de enviar com dados de registro
-        let message = "Sua localização exata está sendo obtida ou é imprecisa.";
+        // Se o GPS está ruim, negado ou demorando (>30m ou null)
+        let message = "A sua localização exata está a ser obtida ou é imprecisa.";
         if (gpsDenied) message = "O acesso ao GPS foi negado.";
-        else if (currentAccuracy > 30 && currentAccuracy < 999) message = `O sinal do GPS está instável (precisão: ${currentAccuracy.toFixed(0)}m).`;
+        else if (currentAccuracy > 30 && currentAccuracy < 999) message = `O sinal do GPS está fraco (precisão: ${currentAccuracy.toFixed(0)}m).`;
+        else if (!location) message = "Ainda não conseguimos obter a sua localização.";
 
         Alert.alert(
             '🚨 AJUDA IMEDIATA',
-            `${message}\n\nDeseja enviar o socorro agora com seus dados de registro?`,
+            `${message}\n\nDeseja enviar o socorro agora com os seus dados de registo? O Comando poderá ligar para confirmar o local exato.`,
             [
                 { text: 'Aguardar GPS', style: 'cancel' },
                 {
                     text: 'Enviar Socorro Já',
                     style: 'destructive',
-                    onPress: () => sendSOSAlert()
+                    onPress: () => sendSOSAlert(true) // isLowAccuracy = true
                 }
             ]
         );
     };
 
     // Função separada para enviar alerta (após validações)
-    const sendSOSAlert = async () => {
+    const sendSOSAlert = async (isLowAccuracy: boolean) => {
         setSending(true);
         setErrorMsg(null);
         try {
@@ -204,28 +237,37 @@ const CitizenScreen: React.FC = () => {
                 userName: profile!.name,
                 contactNumber: profile!.phoneNumber,
                 description: description || "SOS IMEDIATO",
-                location: { lat: location?.lat || null, lng: location?.lng || null },
-                gpsAccuracy: gpsAccuracy, // Salvar precisão do GPS
+                location: {
+                    lat: location?.lat || null,
+                    lng: location?.lng || null
+                },
+                gpsAccuracy: gpsAccuracy || null,
+                isLowAccuracy: isLowAccuracy, // Marcação para o operador
                 type: selectedType || EmergencyType.GENERAL,
                 neighborhood: profile!.neighborhood,
                 manualAddress: `${profile!.city}, ${profile!.neighborhood}`,
                 timestamp: Date.now(),
-                status: AlertStatus.NEW
+                status: AlertStatus.NEW,
+                dataAtualizacao: Date.now()
             });
 
             // Enviar Notificação Push para Operadores
             sendPushNotification(
                 `🚑 SOS: ${selectedType || 'Emergência'}`,
-                `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!`
+                `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!${isLowAccuracy ? ' (Sinal GPS Fraco)' : ''}`
             );
 
             Alert.alert(
                 '✅ SOS Enviado!',
-                `Alerta enviado com precisão de ${(gpsAccuracy || 0).toFixed(0)}m. Ajuda está a caminho!`,
+                isLowAccuracy
+                    ? "Alerta enviado com sinal de GPS fraco. Mantenha o telefone livre para uma possível chamada do Comando."
+                    : `Alerta enviado com sucesso! Ajuda está a caminho do local identificado.`,
                 [{ text: 'OK', onPress: () => setStep(2) }]
             );
-        } catch (err) {
-            setErrorMsg("Falha ao enviar SOS. Verifique sua conexão.");
+        } catch (err: any) {
+            console.error("Erro ao enviar SOS:", err);
+            Alert.alert("Falha Crítica", `Não foi possível enviar o SOS: ${err.message || "Erro desconhecido"}.`);
+            setErrorMsg("Falha ao enviar SOS. Verifique a sua ligação.");
         } finally {
             setSending(false);
         }
@@ -288,7 +330,11 @@ const CitizenScreen: React.FC = () => {
     }
 
     return (
-        <View style={tw`flex-1 bg-black`}>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={tw`flex-1 bg-black`}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
             <Header
                 title={profile?.name || "Cidadão"}
                 subtitle={profile?.neighborhood}
@@ -306,54 +352,60 @@ const CitizenScreen: React.FC = () => {
                         <Text style={tw`text-sm font-black uppercase text-red-600`}>CENTRAL DE AJUDA</Text>
                     </View>
 
-                    <ScrollView style={tw`flex-1 p-8 gap-8`}>
-                        <View style={tw`bg-[#121216] p-10 rounded-[40px] border border-white/5 shadow-2xl`}>
-                            <View style={tw`w-20 h-20 bg-red-600/10 rounded-full items-center justify-center mb-8 self-center`}>
-                                <Phone size={40} color="#ef4444" />
+                    {configLoaded ? (
+                        <ScrollView style={tw`flex-1 p-8 gap-8`} keyboardShouldPersistTaps="handled">
+                            <View style={tw`bg-[#121216] p-10 rounded-[40px] border border-white/5 shadow-2xl`}>
+                                <View style={tw`w-20 h-20 bg-red-600/10 rounded-full items-center justify-center mb-8 self-center`}>
+                                    <Phone size={40} color="#ef4444" />
+                                </View>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/30 text-center mb-4 tracking-widest`}>LINHA DE EMERGÊNCIA</Text>
+                                <Text style={tw`text-4xl font-black text-white text-center mb-2`}>{helpPhone}</Text>
+                                <Text style={tw`text-[11px] font-bold text-red-500 text-center uppercase mb-10 tracking-widest`}>{helpText}</Text>
+
+                                <TouchableOpacity
+                                    onPress={() => Linking.openURL(`tel:${helpPhone}`)}
+                                    style={tw`w-full py-6 bg-red-600 rounded-3xl items-center shadow-2xl flex-row justify-center gap-4`}
+                                >
+                                    <Phone size={20} color="white" />
+                                    <Text style={tw`text-white font-black uppercase text-sm`}>LIGAR AGORA</Text>
+                                </TouchableOpacity>
                             </View>
-                            <Text style={tw`text-[10px] font-black uppercase text-white/30 text-center mb-4 tracking-widest`}>LINHA DE EMERGÊNCIA</Text>
-                            <Text style={tw`text-4xl font-black text-white text-center mb-2`}>{helpPhone}</Text>
-                            <Text style={tw`text-[11px] font-bold text-red-500 text-center uppercase mb-10 tracking-widest`}>{helpText}</Text>
 
-                            <TouchableOpacity
-                                onPress={() => Linking.openURL(`tel:${helpPhone}`)}
-                                style={tw`w-full py-6 bg-red-600 rounded-3xl items-center shadow-2xl flex-row justify-center gap-4`}
-                            >
-                                <Phone size={20} color="white" />
-                                <Text style={tw`text-white font-black uppercase text-sm`}>LIGAR AGORA</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={tw`bg-[#121216] p-8 rounded-[32px] border border-white/5`}>
-                            <View style={tw`flex-row items-center gap-3 mb-6`}>
-                                <Info size={18} color="#fbff00" />
-                                <Text style={tw`text-[10px] font-black uppercase text-white/40 tracking-widest`}>SOBRE O GOGOMA</Text>
+                            <View style={tw`bg-[#121216] p-8 rounded-[32px] border border-white/5`}>
+                                <View style={tw`flex-row items-center gap-3 mb-6`}>
+                                    <Info size={18} color="#fbff00" />
+                                    <Text style={tw`text-[10px] font-black uppercase text-white/40 tracking-widest`}>SOBRE O GOGOMA</Text>
+                                </View>
+                                <Text style={tw`text-sm text-white/80 leading-relaxed font-bold`}>Este aplicativo foi desenvolvido para agilizar o atendimento de emergências. Seus dados de localização e registro são enviados diretamente para o Centro de Operações.</Text>
                             </View>
-                            <Text style={tw`text-sm text-white/80 leading-relaxed font-bold`}>Este aplicativo foi desenvolvido para agilizar o atendimento de emergências. Seus dados de localização e registro são enviados diretamente para o Centro de Operações.</Text>
-                        </View>
 
-                        <View style={tw`bg-red-600/5 p-8 rounded-[32px] border border-red-600/10 mb-20`}>
-                            <View style={tw`flex-row items-center gap-3 mb-4`}>
-                                <AlertTriangle size={18} color="#ef4444" />
-                                <Text style={tw`text-[10px] font-black uppercase text-red-500 tracking-widest`}>AVISO LEGAL</Text>
+                            <View style={tw`bg-red-600/5 p-8 rounded-[32px] border border-red-600/10 mb-20`}>
+                                <View style={tw`flex-row items-center gap-3 mb-4`}>
+                                    <AlertTriangle size={18} color="#ef4444" />
+                                    <Text style={tw`text-[10px] font-black uppercase text-red-500 tracking-widest`}>AVISO LEGAL</Text>
+                                </View>
+                                <Text style={tw`text-[11px] text-white/50 font-bold leading-relaxed`}>O ABUSO DO SISTEMA E TROTES SÃO CRIMES. USE COM RESPONSABILIDADE PARA NÃO COMPROMETER O SOCORRO DE QUEM REALMENTE PRECISA.</Text>
+
+                                <TouchableOpacity
+                                    onPress={async () => {
+                                        await clearUserSession('gogoma_user_profile');
+                                        setIsRegistered(false);
+                                        setProfile(null);
+                                        setStep(0);
+                                        setShowHelp(false);
+                                    }}
+                                    style={tw`flex-row items-center justify-center gap-3 p-6 bg-white/5 border border-white/10 rounded-2xl mt-8`}
+                                >
+                                    <RefreshCcw size={16} color="#ef4444" />
+                                    <Text style={tw`text-[10px] font-black uppercase text-red-500`}>SAIR / MUDAR PERFIL</Text>
+                                </TouchableOpacity>
                             </View>
-                            <Text style={tw`text-[11px] text-white/50 font-bold leading-relaxed`}>O ABUSO DO SISTEMA E TROTES SÃO CRIMES. USE COM RESPONSABILIDADE PARA NÃO COMPROMETER O SOCORRO DE QUEM REALMENTE PRECISA.</Text>
-
-                            <TouchableOpacity
-                                onPress={async () => {
-                                    await clearUserSession('gogoma_user_profile');
-                                    setIsRegistered(false);
-                                    setProfile(null);
-                                    setStep(0);
-                                    setShowHelp(false);
-                                }}
-                                style={tw`flex-row items-center justify-center gap-3 p-6 bg-white/5 border border-white/10 rounded-2xl mt-8`}
-                            >
-                                <RefreshCcw size={16} color="#ef4444" />
-                                <Text style={tw`text-[10px] font-black uppercase text-red-500`}>SAIR / MUDAR PERFIL</Text>
-                            </TouchableOpacity>
+                        </ScrollView>
+                    ) : (
+                        <View style={tw`flex-1 items-center justify-center`}>
+                            <RefreshCcw size={32} color={NEON_YELLOW} style={tw`opacity-20`} />
                         </View>
-                    </ScrollView>
+                    )}
                 </View>
             </Modal>
 
@@ -410,7 +462,7 @@ const CitizenScreen: React.FC = () => {
                     />
                 </View>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 

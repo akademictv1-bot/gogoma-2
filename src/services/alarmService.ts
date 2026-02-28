@@ -1,124 +1,137 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 
-let alarmSound: Audio.Sound | null = null;
 let alarmInterval: NodeJS.Timeout | null = null;
-let autoStopTimeout: NodeJS.Timeout | null = null;
 let beepTimeoutIds: NodeJS.Timeout[] = [];
-let isAudioUnlocked = Platform.OS !== 'web'; // No Mobile já é desbloqueado por padrão
+let isAudioUnlocked = Platform.OS !== 'web';
+let isAlarmActive = false;
 
-// URL extremamente estável (freeCodeCamp CDN) - Verificada com 200 OK
+// Som pré-carregado para latência zero
+let preloadedSound: Audio.Sound | null = null;
+
 const ALARM_URI = 'https://raw.githubusercontent.com/freeCodeCamp/cdn/master/build/testable-projects-fcc/audio/BeepSound.wav';
 
 /**
- * No Web, navegadores bloqueiam som automático (Auto-play policy). 
- * Esta função DEVE ser chamada em um evento de clique direto do usuário (ex: ao clicar no botão de Login).
+ * Pré-carrega o áudio para que o "primeiro segundo" seja instantâneo.
+ */
+const preloadAlarm = async () => {
+    try {
+        if (preloadedSound) return;
+        const { sound } = await Audio.Sound.createAsync(
+            { uri: ALARM_URI },
+            { shouldPlay: false, volume: 1.0 }
+        );
+        preloadedSound = sound;
+    } catch (e) {
+        console.error("Erro ao pré-carregar som:", e);
+    }
+};
+preloadAlarm();
+
+/**
+ * No Web, navegadores bloqueiam som automático.
+ * Deve ser chamada num evento de clique direto do usuário.
  */
 export const unlockAudio = async () => {
     if (Platform.OS !== 'web' || isAudioUnlocked) return;
-
     try {
-        // Tenta tocar um som curto e quase silencioso para ganhar a permissão do navegador
-        const { sound } = await Audio.Sound.createAsync(
-            { uri: ALARM_URI },
-            { shouldPlay: true, volume: 0.001 }
-        );
-
-        await sound.unloadAsync();
-        isAudioUnlocked = true;
+        await preloadAlarm();
+        if (preloadedSound) {
+            await preloadedSound.playAsync();
+            await preloadedSound.stopAsync();
+            isAudioUnlocked = true;
+        }
     } catch (error) {
-        // Ignora falha de áudio se não houver interação
+        // Ignora falha silenciosa
     }
 };
 
 /**
- * Toca o padrão "beep-beep-beep" do alarme.
- * No Web, se o áudio não foi desbloqueado, apenas loga um aviso para evitar erros críticos.
+ * Executa UM ÚNICO padrão "beep-beep-beep-beep-beep" (5 bips) de forma ultra-robusta.
  */
 const playBeepPattern = async () => {
-    if (Platform.OS === 'web' && !isAudioUnlocked) {
-        return;
-    }
+    if (Platform.OS === 'web' && !isAudioUnlocked) return;
 
     try {
+        if (!preloadedSound) await preloadAlarm();
+        if (!preloadedSound) return;
 
-        const executeBeep = async () => {
-            const { sound } = await Audio.Sound.createAsync(
-                { uri: ALARM_URI },
-                { shouldPlay: true, volume: 1.0 }
-            );
+        // Limpar timeouts pendentes antes de iniciar novo padrão
+        beepTimeoutIds.forEach(id => clearTimeout(id));
+        beepTimeoutIds = [];
 
-            // Define o descarregamento automático após o término
-            sound.setOnPlaybackStatusUpdate((status) => {
-                if (status.isLoaded && status.didJustFinish) {
-                    sound.unloadAsync();
-                }
-            });
+        const play = async () => {
+            try {
+                await preloadedSound!.stopAsync().catch(() => { });
+                await preloadedSound!.playAsync().catch(() => { });
+            } catch (e) { /* ignore */ }
         };
 
-        // Padrão: Beep -> 600ms -> Beep -> 1200ms -> Beep
-        await executeBeep();
-        beepTimeoutIds.push(setTimeout(executeBeep, 600));
-        beepTimeoutIds.push(setTimeout(executeBeep, 1200));
+        // Padrão de 5 bips (Urgência Elite)
+        // Bip 1 (Garante o primeiro milissegundo)
+        await play();
+
+        const scheduleBip = (delay: number) => {
+            const id = setTimeout(play, delay);
+            beepTimeoutIds.push(id);
+        };
+
+        scheduleBip(400);  // Bip 2
+        scheduleBip(800);  // Bip 3
+        scheduleBip(1200); // Bip 4
+        scheduleBip(1600); // Bip 5
 
     } catch (error) {
-        // Evita spam de erro 404 se a rede falhar
+        console.error("Erro no playback elite:", error);
     }
 };
 
 /**
- * Toca o padrão "beep-beep-beep" do alarme imediatamente.
- * Pode ser chamada várias vezes se novos alertas chegarem.
+ * Toca um bip imediato avulso (Som Elite - 1º Segundo).
  */
 export const playImmediateBeep = async () => {
     await playBeepPattern();
 };
 
 /**
- * Inicia o loop do alarme (repetindo a cada 60 segundos).
+ * Inicia o ciclo de alarme:
  */
 export const startAlarm = async () => {
-    if (alarmInterval) return; // Já está rodando
+    if (isAlarmActive) {
+        // Se já está ativo, garante pelo menos um bip imediato para sinalizar novo alerta
+        await playBeepPattern();
+        return;
+    }
 
-    // Toca o primeiro conjunto de beeps imediatamente
+    isAlarmActive = true;
+
+    // Primeiro disparo imediato
     await playBeepPattern();
 
-    // Repete a cada 60 segundos conforme regra de negócio
-    alarmInterval = setInterval(playBeepPattern, 60000);
-
-    // Auto-stop após 1 hora para segurança e economia de recursos
-    autoStopTimeout = setTimeout(() => {
-        stopAlarm();
-    }, 3600000);
+    // Repetir a cada 3 minutos (180.000ms) conforme pedido final de produção
+    alarmInterval = setInterval(async () => {
+        if (isAlarmActive) {
+            await playBeepPattern();
+        }
+    }, 180000);
 };
 
 /**
- * Para imediatamente qualquer som e limpa os intervalos.
+ * Para o alarme imediatamente e limpa tudo.
  */
 export const stopAlarm = async () => {
-    if (!alarmInterval && !alarmSound) return;
+    isAlarmActive = false;
 
     if (alarmInterval) {
         clearInterval(alarmInterval);
         alarmInterval = null;
     }
 
-    if (autoStopTimeout) {
-        clearTimeout(autoStopTimeout);
-        autoStopTimeout = null;
-    }
-
-    // Limpar timeouts de beeps internos pendentes
     beepTimeoutIds.forEach(id => clearTimeout(id));
     beepTimeoutIds = [];
-
-    if (alarmSound) {
-        try {
-            await alarmSound.stopAsync();
-            await alarmSound.unloadAsync();
-            alarmSound = null;
-        } catch (error) {
-            // Ignora erros ao parar som se ele já tiver sido descarregado
-        }
-    }
 };
+
+/**
+ * Retorna se o alarme está activo.
+ */
+export const isAlarmRunning = () => isAlarmActive;

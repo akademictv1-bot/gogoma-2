@@ -4,6 +4,9 @@
     "strict": false,
     "skipLibCheck": true,
     "baseUrl": ".",
+    "jsx": "react-native",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
     "paths": {
       "*": [
         "src/*"

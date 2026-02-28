@@ -3,6 +3,7 @@
     "name": "GOGOMA",
     "slug": "gogoma",
     "version": "1.0.0",
+    "sdkVersion": "50.0.0",
     "orientation": "portrait",
     "icon": "",
     "userInterfaceStyle": "dark",

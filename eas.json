@@ -5,9 +5,17 @@
             "distribution": "internal"
         },
         "preview": {
-            "distribution": "internal"
+            "distribution": "internal",
+            "android": {
+                "buildType": "apk"
+            }
         },
-        "production": {}
+        "production": {
+            "node": "20.10.0",
+            "android": {
+                "buildType": "app-bundle"
+            }
+        }
     },
     "submit": {
         "production": {}

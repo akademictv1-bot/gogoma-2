@@ -36,7 +36,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, working, onSubmit, errorMsg, 
                 placeholder="TELEMÓVEL"
                 placeholderTextColor="#475569"
                 keyboardType="phone-pad"
-                maxLength={13}
+                maxLength={9}
                 style={tw`w-full bg-[#0d0d10] border border-white/10 rounded-2xl p-5 text-white font-bold text-xl`}
                 value={fields.phone}
                 onChangeText={v => fields.setPhone(v.replace(/\D/g, ''))}

@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Image, Platform } from 'react-native';
-import { Download, Trash2, Shield, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, User, Phone, Map, Navigation, BrainCircuit, CheckCircle, Settings, AlertCircle, Volume2 } from 'lucide-react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Image, Platform, AppState } from 'react-native';
+import { Download, Trash2, Shield, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, User, Phone, Map, Navigation, BrainCircuit, CheckCircle, Settings, AlertCircle, Volume2, WifiOff } from 'lucide-react-native';
 import tw from 'twrnc';
 import { Audio } from 'expo-av';
+import { Animated } from 'react-native';
 
 import { db } from '../services/firebase';
-import { collection, onSnapshot, doc, updateDoc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, updateDoc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 // Gemini service removido - feature de IA desabilitada
 import { EmergencyAlert, AlertStatus } from '../types';
 import { startAlarm, stopAlarm, unlockAudio, playImmediateBeep } from '../services/alarmService';
+import { decryptCredentials } from '../services/cryptoUtils';
 import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
 
 import Header from '../components/Header';
@@ -31,25 +33,120 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     const [helpText, setHelpText] = useState('PEÇA SOCORRO IMEDIATO');
     const prevNewAlertsCount = useRef(0);
 
-    const SECRET_ID = "PRM_9922";
-    const SECRET_PASS = "Gogoma@2024";
+    // Animações de Botão (Elite Feedback)
+    const dispatchScale = useRef(new Animated.Value(1)).current;
+    const resolveScale = useRef(new Animated.Value(1)).current;
+
+    const animatePress = (scaleVar: Animated.Value) => {
+        Animated.sequence([
+            Animated.timing(scaleVar, { toValue: 0.92, duration: 100, useNativeDriver: true }),
+            Animated.spring(scaleVar, { toValue: 1, friction: 4, useNativeDriver: true })
+        ]).start();
+    };
+
+    // Credenciais agora encriptadas no Firestore
+    const [dbCredentials, setDbCredentials] = useState<{ id: string, pass: string } | null>(null);
+    const [loadingCreds, setLoadingCreds] = useState(true);
+
+    const fetchCreds = async () => {
+        setLoadingCreds(true);
+        console.log("[PoliceAuth] Iniciando conexão com Firestore...");
+        try {
+            const docRef = doc(db, 'comando_universal', 'credenciais');
+            const credSnap = await getDoc(docRef);
+
+            if (credSnap.exists()) {
+                console.log("[PoliceAuth] Documento encontrado.");
+                const data = credSnap.data();
+                const secretKey = process.env.EXPO_PUBLIC_CRYPTO_KEY;
+
+                if (!secretKey) {
+                    console.error("[PoliceAuth] ERRO: EXPO_PUBLIC_CRYPTO_KEY não encontrada.");
+                    Alert.alert("Erro de Ambiente", "A chave EXPO_PUBLIC_CRYPTO_KEY não foi encontrada. Por favor, reinicie o servidor Expo (Ctrl+C e npx expo start).");
+                    return;
+                }
+
+                if (!data.encryptedId || !data.encryptedPassword) {
+                    Alert.alert("Dados Incompletos", "O documento no Firestore existe, mas faltam os campos 'encryptedId' ou 'encryptedPassword'. Verifique se escreveu os nomes exatamente assim.");
+                    return;
+                }
+
+                try {
+                    const decrypted = decryptCredentials(
+                        data.encryptedId,
+                        data.encryptedPassword,
+                        secretKey
+                    );
+
+                    if (!decrypted.id || !decrypted.password) {
+                        throw new Error("Desencriptação falhou");
+                    }
+
+                    console.log("[PoliceAuth] Credenciais carregadas.");
+                    setDbCredentials({ id: decrypted.id, pass: decrypted.password });
+                } catch (decError) {
+                    console.error("[PoliceAuth] Falha ao desencriptar:", decError);
+                    Alert.alert("Erro de Chave", "A chave no .env.local não consegue ler os dados do Firebase. Verifique se usou a mesma chave secreta para gerar os dados.");
+                }
+            } else {
+                console.error("[PoliceAuth] ERRO: Documento não existe.");
+                Alert.alert("Firestore Vazio", "Ainda não criou o documento 'comando_universal/credenciais' no Firebase.");
+            }
+        } catch (err) {
+            console.error("[PoliceAuth] Erro inesperado:", err);
+            Alert.alert("Erro de Conexão", "Falha ao ligar ao Firebase. Verifique se tem internet e se as regras de segurança permitem a leitura.");
+        } finally {
+            setLoadingCreds(false);
+        }
+    };
+
+    // Carregar e Desencriptar Credenciais do Firestore
+    useEffect(() => {
+        fetchCreds();
+    }, []);
 
     const handleLogin = () => {
-        if (badgeId === SECRET_ID && password === SECRET_PASS) {
+        if (loadingCreds) {
+            Alert.alert("Aguarde", "O sistema ainda está a carregar as credenciais de segurança...");
+            return;
+        }
+
+        if (!dbCredentials) {
+            const errorMsg = !process.env.EXPO_PUBLIC_CRYPTO_KEY
+                ? "Chave de criptografia (EXPO_PUBLIC_CRYPTO_KEY) não encontrada no seu ficheiro .env. Verifique o ficheiro e reinicie o servidor Expo."
+                : "Não foi possível carregar as credenciais do Firestore. Verifique a sua ligação à internet ou as regras de segurança do Firebase.";
+
+            Alert.alert("Erro no Servidor", errorMsg);
+            return;
+        }
+
+        console.log("[PoliceAuth] Tentando login para ID:", badgeId);
+        if (badgeId.trim() === dbCredentials.id && password === dbCredentials.pass) {
             setIsAuthenticated(true);
             setAuthError(false);
-            // IMPORTANTE: Clique do usuário desbloqueia áudio no Web
             unlockAudio();
         } else {
             setAuthError(true);
             setPassword('');
+            Alert.alert("Acesso Negado", "O ID ou a Senha inseridos estão incorretos.");
         }
     };
 
     const updateAlertStatus = async (id: string, status: AlertStatus) => {
-        const docRef = doc(db, 'emergencias', id);
-        await updateDoc(docRef, { status, dataAtualizacao: Date.now() });
-        if (status === AlertStatus.RESOLVED) setSelectedAlert(null);
+        try {
+            const docRef = doc(db, 'emergencias', id);
+            await updateDoc(docRef, { status, dataAtualizacao: Date.now() });
+
+            // SEMPRE fechar o modal após uma ação (conforme solicitado)
+            setSelectedAlert(null);
+
+            if (status === AlertStatus.IN_PROGRESS) {
+                stopAlarm();
+                Alert.alert('Despacho Enviado', 'Equipa a caminho. O alerta ficará amarelo para todos os operadores.');
+            }
+        } catch (err: any) {
+            Alert.alert('Erro', `Não foi possível atualizar: ${err.message}`);
+        }
     };
 
     // Função handleGenerateProtocol removida - Gemini AI desabilitado
@@ -105,7 +202,10 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
 
     const clearHistory = async () => {
         const historyAlerts = alerts.filter(a => a.status === AlertStatus.RESOLVED);
-        if (historyAlerts.length === 0) return;
+        if (historyAlerts.length === 0) {
+            Alert.alert("Histórico Vazio", "Não existem registros resolvidos para apagar.");
+            return;
+        }
 
         Alert.alert(
             "Limpar Histórico",
@@ -117,15 +217,21 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                     style: "destructive",
                     onPress: async () => {
                         try {
-                            const batch = writeBatch(db);
-                            historyAlerts.forEach(a => {
-                                const docRef = doc(db, 'emergencias', a.id);
-                                batch.delete(docRef);
-                            });
-                            await batch.commit();
+                            // Firestore Batch tem limite de 500 operações. Vamos processar em blocos.
+                            const chunkSize = 400;
+                            for (let i = 0; i < historyAlerts.length; i += chunkSize) {
+                                const batch = writeBatch(db);
+                                const chunk = historyAlerts.slice(i, i + chunkSize);
+                                chunk.forEach(a => {
+                                    const docRef = doc(db, 'emergencias', a.id);
+                                    batch.delete(docRef);
+                                });
+                                await batch.commit();
+                            }
                             Alert.alert("Sucesso", "Histórico limpo com sucesso.");
-                        } catch (error) {
-                            Alert.alert("Erro", "Não foi possível apagar o histórico.");
+                        } catch (error: any) {
+                            console.error("Erro ao apagar histórico:", error);
+                            Alert.alert("Erro", `Não foi possível apagar totalmente o histórico: ${error.message}`);
                         }
                     }
                 }
@@ -133,36 +239,84 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         );
     };
 
-    // useEffect para monitorar alertas pendentes e tocar som
+    // ──────────── LÓGICA DE ÁUDIO PROFISSIONAL ────────────
+    // Regras Mestre:
+    // 1. SOS entra (NEW) → alarme toca IMEDIATAMENTE
+    // 2. Sem ação (NEW) → repete a cada 60 segundos
+    // 3. Despachar (IN_PROGRESS) → SILÊNCIO por 30 minutos (por pedido)
+    // 4. Stale (>30 min em IN_PROGRESS) → Alarme VOLTA a tocar
+    // 5. Resolver (RESOLVED) → Silêncio total para aquele pedido
+    // 6. Alarme para APENAS se não houver NENHUM alerta NEW ou STALE
+
     useEffect(() => {
+        if (!isAuthenticated) {
+            stopAlarm();
+            return;
+        }
+
+        const now = Date.now();
+
+        // a) Pedidos NOVOS
         const newAlerts = alerts.filter(a => a.status === AlertStatus.NEW);
-        const hasNewAlerts = newAlerts.length > 0;
 
-        if (isAuthenticated) {
-            // Se o número de alertas novos aumentou, toca IMEDIATAMENTE
-            if (newAlerts.length > prevNewAlertsCount.current) {
-                // Se já havia alertas antes, o startAlarm já está rodando (intervalo).
-                // Precisamos forçar um bip imediato para o novo pedido.
-                // Se prevNewAlertsCount era 0, o startAlarm() abaixo já vai tocar o primeiro bip.
-                if (prevNewAlertsCount.current > 0) {
-                    playImmediateBeep();
-                }
-            }
+        // b) Pedidos STALE (Despacho parado há mais de 30 min)
+        const staleDispatches = alerts.filter(a =>
+            a.status === AlertStatus.IN_PROGRESS &&
+            a.dataAtualizacao &&
+            (now - a.dataAtualizacao > 1800000) // 30 minutos
+        );
 
-            if (hasNewAlerts) {
-                startAlarm();
-            } else {
-                stopAlarm();
-            }
+        const urgentCount = newAlerts.length + staleDispatches.length;
+
+        // Gatilho imediato se o número de urgências aumentar (Novo SOS ou Novo Stale)
+        if (urgentCount > prevNewAlertsCount.current) {
+            playImmediateBeep();
+        }
+
+        // Gestão do Loop de 60 segundos
+        if (urgentCount > 0) {
+            startAlarm();
         } else {
             stopAlarm();
         }
 
-        prevNewAlertsCount.current = newAlerts.length;
+        prevNewAlertsCount.current = urgentCount;
+    }, [alerts, isAuthenticated]);
 
-        return () => {
-            stopAlarm();
-        };
+    // Verificação contínua para transformar IN_PROGRESS em STALE em tempo real
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        const interval = setInterval(() => {
+            // Apenas forçamos o re-cálculo do useEffect acima
+            // React vai detetar que o tempo mudou e as urgências podem ter mudado
+            const now = Date.now();
+            const hasStale = alerts.some(a =>
+                a.status === AlertStatus.IN_PROGRESS &&
+                a.dataAtualizacao &&
+                (now - a.dataAtualizacao > 1800000)
+            );
+            if (hasStale) startAlarm();
+        }, 30000); // Checar a cada 30 segundos
+        return () => clearInterval(interval);
+    }, [alerts, isAuthenticated]);
+
+    // Verificação de AppState para re-alarme imediato ao voltar para o foco
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', nextAppState => {
+            if (nextAppState === 'active' && isAuthenticated) {
+                // Ao voltar para o app, se houver urgências, dispara bip imediato
+                const now = Date.now();
+                const urgentCount = alerts.filter(a =>
+                    a.status === AlertStatus.NEW ||
+                    (a.status === AlertStatus.IN_PROGRESS && a.dataAtualizacao && (now - a.dataAtualizacao > 1800000))
+                ).length;
+
+                if (urgentCount > 0) {
+                    playImmediateBeep();
+                }
+            }
+        });
+        return () => subscription.remove();
     }, [alerts, isAuthenticated]);
 
     const filteredAlerts = alerts
@@ -202,9 +356,26 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                             onChangeText={setPassword}
                         />
                         {authError && <Text style={tw`text-red-600 text-[10px] font-black text-center uppercase`}>ACESSO NEGADO</Text>}
-                        <TouchableOpacity onPress={handleLogin} style={tw`w-full bg-red-600 py-5 rounded-2xl items-center shadow-xl`}>
-                            <Text style={tw`text-white font-black uppercase text-xs`}>ENTRAR NO COMANDO</Text>
+                        <TouchableOpacity
+                            onPress={handleLogin}
+                            disabled={loadingCreds}
+                            style={tw`w-full bg-red-600 py-5 rounded-2xl items-center shadow-xl ${loadingCreds ? 'opacity-50' : ''}`}
+                        >
+                            <Text style={tw`text-white font-black uppercase text-xs`}>
+                                {loadingCreds ? 'VERIFICANDO SERVIDOR...' : 'ENTRAR NO COMANDO'}
+                            </Text>
                         </TouchableOpacity>
+
+                        {!dbCredentials && !loadingCreds && (
+                            <TouchableOpacity
+                                onPress={fetchCreds}
+                                activeOpacity={0.7}
+                                style={tw`mt-2 flex-row items-center justify-center gap-2`}
+                            >
+                                <RefreshCcw size={14} color="#4b5563" />
+                                <Text style={tw`text-[#4b5563] text-[10px] font-bold uppercase`}>RECARREGAR CREDENCIAIS</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
                 </View>
             </View>
@@ -255,6 +426,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                     </TouchableOpacity>
                     <TouchableOpacity
                         onPress={clearHistory}
+                        activeOpacity={0.7}
                         style={tw`flex-1 flex-row items-center justify-center gap-2 py-3 bg-red-600/10 border border-red-500/30 rounded-xl`}
                     >
                         <Trash2 size={14} color="#ef4444" />
@@ -274,16 +446,31 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                         <TouchableOpacity
                             key={alert.id}
                             onPress={() => { setSelectedAlert(alert); }}
-                            style={[tw`w-full p-6 border-b border-white/5`, selectedAlert?.id === alert.id && tw`bg-white/5 border-l-4 border-red-600`]}
+                            style={[
+                                tw`w-full p-6 border-b border-white/5`,
+                                selectedAlert?.id === alert.id && tw`bg-white/5 border-l-4 border-red-600`,
+                                alert.status === AlertStatus.IN_PROGRESS && tw`border-l-4 border-amber-500 bg-amber-500/5`
+                            ]}
                         >
                             <View style={tw`flex-row justify-between items-center mb-2`}>
-                                <Text style={[tw`text-[8px] font-black px-2 py-1 rounded-full`, alert.status === AlertStatus.NEW ? tw`bg-red-600 text-white` : tw`bg-white/10 text-white/40`]}>{alert.status}</Text>
+                                <Text style={[
+                                    tw`text-[8px] font-black px-2 py-1 rounded-full`,
+                                    alert.status === AlertStatus.NEW ? tw`bg-red-600 text-white` :
+                                        alert.status === AlertStatus.IN_PROGRESS ? tw`bg-amber-500 text-black` :
+                                            tw`bg-white/10 text-white/40`
+                                ]}>{alert.status === AlertStatus.IN_PROGRESS ? 'EM DESPACHO' : alert.status}</Text>
                                 <Text style={tw`text-[9px] text-white/30 font-bold`}>{new Date(alert.timestamp).toLocaleTimeString()}</Text>
                             </View>
                             <Text style={tw`font-black text-sm uppercase text-white tracking-tight`}>{alert.type}</Text>
                             <View style={tw`flex-row items-center gap-1 mt-1`}>
                                 <MapPin size={10} color="#dc2626" />
                                 <Text style={tw`text-[10px] text-white/50 font-bold`}>{alert.neighborhood || 'LOCAL NÃO IDENTIFICADO'}</Text>
+                                {alert.isLowAccuracy && (
+                                    <View style={tw`ml-2 flex-row items-center gap-1 bg-red-600/10 px-2 py-0.5 rounded`}>
+                                        <WifiOff size={8} color="#ef4444" />
+                                        <Text style={tw`text-[7px] font-black text-red-500 uppercase`}>GPS FRACO</Text>
+                                    </View>
+                                )}
                             </View>
                         </TouchableOpacity>
                     ))
@@ -327,16 +514,36 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                         </View>
 
                         {/* Seção de IA Gemini removida - Feature desabilitada */}
+                    </ScrollView>
 
-                        <View style={tw`flex-row gap-2 mt-4 mb-20`}>
-                            <TouchableOpacity onPress={() => updateAlertStatus(selectedAlert!.id, AlertStatus.IN_PROGRESS)} style={tw`flex-1 px-8 py-5 bg-blue-600 rounded-2xl items-center shadow-lg`}>
+                    {/* Botões FORA do ScrollView para serem sempre clicáveis */}
+                    <View style={tw`p-4 bg-[#0d0d10] border-t border-white/10 flex-row gap-3`}>
+                        <Animated.View style={{ flex: 1, transform: [{ scale: dispatchScale }] }}>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    animatePress(dispatchScale);
+                                    updateAlertStatus(selectedAlert!.id, AlertStatus.IN_PROGRESS);
+                                }}
+                                activeOpacity={0.6}
+                                style={tw`w-full py-5 bg-white/10 border border-white/20 rounded-2xl items-center`}
+                            >
                                 <Text style={tw`text-white font-black uppercase text-[10px]`}>DESPACHAR</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => updateAlertStatus(selectedAlert!.id, AlertStatus.RESOLVED)} style={tw`flex-1 px-8 py-5 bg-green-600 rounded-2xl items-center shadow-lg`}>
+                        </Animated.View>
+
+                        <Animated.View style={{ flex: 1, transform: [{ scale: resolveScale }] }}>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    animatePress(resolveScale);
+                                    updateAlertStatus(selectedAlert!.id, AlertStatus.RESOLVED);
+                                }}
+                                activeOpacity={0.6}
+                                style={tw`w-full py-5 bg-green-600 rounded-2xl items-center`}
+                            >
                                 <Text style={tw`text-white font-black uppercase text-[10px]`}>RESOLVER</Text>
                             </TouchableOpacity>
-                        </View>
-                    </ScrollView>
+                        </Animated.View>
+                    </View>
                 </View>
             </Modal>
 
