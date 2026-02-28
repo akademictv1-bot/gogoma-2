@@ -50,13 +50,11 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
 
     const fetchCreds = async () => {
         setLoadingCreds(true);
-        console.log("[PoliceAuth] Iniciando conexão com Firestore...");
         try {
             const docRef = doc(db, 'comando_universal', 'credenciais');
             const credSnap = await getDoc(docRef);
 
             if (credSnap.exists()) {
-                console.log("[PoliceAuth] Documento encontrado.");
                 const data = credSnap.data();
                 const secretKey = process.env.EXPO_PUBLIC_CRYPTO_KEY;
 
@@ -82,7 +80,6 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                         throw new Error("Desencriptação falhou");
                     }
 
-                    console.log("[PoliceAuth] Credenciais carregadas.");
                     setDbCredentials({ id: decrypted.id, pass: decrypted.password });
                 } catch (decError) {
                     console.error("[PoliceAuth] Falha ao desencriptar:", decError);
@@ -120,7 +117,6 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
             return;
         }
 
-        console.log("[PoliceAuth] Tentando login para ID:", badgeId);
         if (badgeId.trim() === dbCredentials.id && password === dbCredentials.pass) {
             setIsAuthenticated(true);
             setAuthError(false);
