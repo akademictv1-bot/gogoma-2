@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Image, Platform, AppState } from 'react-native';
-import { Download, Trash2, Shield, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, User, Phone, Map, Navigation, BrainCircuit, CheckCircle, Settings, AlertCircle, Volume2, WifiOff } from 'lucide-react-native';
+import { Download, Trash2, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, Settings, WifiOff } from 'lucide-react-native';
 import tw from 'twrnc';
-import { Audio } from 'expo-av';
 import { Animated } from 'react-native';
 
 import { db } from '../services/firebase';
-import { collection, onSnapshot, doc, getDoc, updateDoc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from '../types';
 import { startAlarm, stopAlarm, unlockAudio, playImmediateBeep } from '../services/alarmService';
 import { decryptValue } from '../services/cryptoUtils';
@@ -62,8 +61,6 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                     return;
                 }
 
-                console.log("[PoliceAuth] Documento lido:", data);
-
                 if (!data.encryptedPassword) {
                     Alert.alert("Configuração Incompleta", "Os dados de acesso ainda não foram configurados no servidor.");
                     return;
@@ -108,13 +105,6 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         }
 
         const officialId = process.env.EXPO_PUBLIC_COMMAND_ID;
-        console.log("[PoliceAuth] Tentativa de Login:", {
-            badgeId: badgeId.trim(),
-            officialId,
-            hasDbPassword: !!dbPassword,
-            cryptoKeyExists: !!process.env.EXPO_PUBLIC_CRYPTO_KEY
-        });
-
         if (!dbPassword || !officialId) {
             Alert.alert("Rede Indisponível", "Ligue-se à internet para validar o seu acesso ao Comando.");
             return;

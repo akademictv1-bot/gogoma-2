@@ -274,17 +274,24 @@ const CitizenScreen: React.FC = () => {
             // Upload de imagens se existirem
             if (selectedImages.length > 0) {
                 setUploadingImages(true);
-                for (let i = 0; i < selectedImages.length; i++) {
-                    const uri = selectedImages[i];
-                    const response = await fetch(uri);
-                    const blob = await response.blob();
-                    const fileName = `sos_${Date.now()}_${i}.jpg`;
-                    const storageRef = ref(storage, `alertas/${fileName}`);
-                    await uploadBytes(storageRef, blob);
-                    const url = await getDownloadURL(storageRef);
-                    imageUrls.push(url);
+                try {
+                    for (let i = 0; i < selectedImages.length; i++) {
+                        const uri = selectedImages[i];
+                        const response = await fetch(uri);
+                        const blob = await response.blob();
+                        const fileName = `sos_${Date.now()}_${i}.jpg`;
+                        const storageRef = ref(storage, `alertas/${fileName}`);
+                        await uploadBytes(storageRef, blob);
+                        const url = await getDownloadURL(storageRef);
+                        imageUrls.push(url);
+                    }
+                } catch (uploadErr) {
+                    // Se o upload falhar, o SOS é enviado MESMO ASSIM, sem as fotos
+                    // Isso é crítico: um SOS nunca pode falhar por causa de uma foto
+                    console.error("Aviso: falha no upload de imagem, SOS enviado sem fotos:", uploadErr);
+                } finally {
+                    setUploadingImages(false);
                 }
-                setUploadingImages(false);
             }
 
             // Documento de emergência com timestamp e dados do perfil
