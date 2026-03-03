@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "sdkVersion": "50.0.0",
     "orientation": "portrait",
-    "icon": "",
+    "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
       "image": "./src/assets/splash.png",
