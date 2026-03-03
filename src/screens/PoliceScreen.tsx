@@ -7,7 +7,7 @@ import { Animated } from 'react-native';
 
 import { db } from '../services/firebase';
 import { collection, onSnapshot, doc, getDoc, updateDoc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-// Gemini service removido - feature de IA desabilitada
+// Feature de IA desabilitada
 import { EmergencyAlert, AlertStatus } from '../types';
 import { startAlarm, stopAlarm, unlockAudio, playImmediateBeep } from '../services/alarmService';
 import { decryptValue } from '../services/cryptoUtils';
@@ -25,7 +25,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     const [password, setPassword] = useState('');
     const [authError, setAuthError] = useState(false);
     const [selectedAlert, setSelectedAlert] = useState<EmergencyAlert | null>(null);
-    // aiProtocol e loadingAi removidos - Gemini desabilitado
+    // aiProtocol e loadingAi removidos
     const [activeTab, setActiveTab] = useState<'pending' | 'resolved'>('pending');
     const [showConfig, setShowConfig] = useState(false);
     const [newLogoUrl, setNewLogoUrl] = useState('');
@@ -150,7 +150,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         }
     };
 
-    // Função handleGenerateProtocol removida - Gemini AI desabilitado
+    // Função handleGenerateProtocol removida
 
     // Função para tocar som de alerta de emergência removida - movida para alarmService
 
@@ -538,7 +538,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                             </View>
                         )}
 
-                        {/* Seção de IA Gemini removida - Feature desabilitada */}
+                        {/* Seção de IA removida */}
                     </ScrollView>
 
                     {/* Botões FORA do ScrollView para serem sempre clicáveis */}
