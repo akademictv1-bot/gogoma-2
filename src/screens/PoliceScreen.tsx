@@ -10,6 +10,7 @@ import { EmergencyAlert, AlertStatus } from '../types';
 import { startAlarm, stopAlarm, unlockAudio, playImmediateBeep } from '../services/alarmService';
 import { decryptValue } from '../services/cryptoUtils';
 import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
+import { saveUserSession, getUserSession } from '../services/storage';
 
 import Header from '../components/Header';
 
@@ -48,6 +49,15 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     const fetchCreds = async () => {
         setLoadingCreds(true);
         try {
+            // 1. Tentar carregar do cache local primeiro (funciona offline)
+            const cachedPwd = await getUserSession('gogoma_cmd_pwd_cache');
+            if (cachedPwd) {
+                setDbPassword(cachedPwd);
+                // Se temos cache, já estamos prontos. Tentar atualizar em background sem bloquear
+                setLoadingCreds(false);
+            }
+
+            // 2. Tentar buscar do Firestore (atualiza cache se tiver internet)
             const docRef = doc(db, 'comando_universal', 'credenciais');
             const credSnap = await getDoc(docRef);
 
@@ -56,38 +66,44 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                 const secretKey = process.env.EXPO_PUBLIC_CRYPTO_KEY;
 
                 if (!secretKey) {
-                    console.error("[PoliceAuth] ERRO: EXPO_PUBLIC_CRYPTO_KEY não encontrada.");
-                    Alert.alert("Erro de Sistema", "Ocorreu um erro na configuração de segurança do Comando. Por favor, contacte o suporte técnico.");
+                    // Chave não encontrada no ambiente - usar cache se disponível
+                    if (!cachedPwd) {
+                        Alert.alert("Erro de Sistema", "Contacte o administrador do sistema.");
+                    }
                     return;
                 }
 
                 if (!data.encryptedPassword) {
-                    Alert.alert("Configuração Incompleta", "Os dados de acesso ainda não foram configurados no servidor.");
+                    if (!cachedPwd) {
+                        Alert.alert("Sistema Indisponível", "O servidor ainda não foi configurado.");
+                    }
                     return;
                 }
 
                 try {
-                    const decryptedPassword = decryptValue(
-                        data.encryptedPassword,
-                        secretKey
-                    );
+                    const decryptedPassword = decryptValue(data.encryptedPassword, secretKey);
+                    if (!decryptedPassword) throw new Error("Desencriptação falhou");
 
-                    if (!decryptedPassword) {
-                        throw new Error("Desencriptação da senha falhou");
-                    }
-
+                    // Guardar no cache para acesso offline futuro
+                    await saveUserSession('gogoma_cmd_pwd_cache', decryptedPassword);
                     setDbPassword(decryptedPassword);
                 } catch (decError) {
-                    console.error("[PoliceAuth] Falha ao desencriptar senha:", decError);
-                    Alert.alert("Segurança", "Não foi possível validar as chaves de segurança. Tente novamente ou verifique a sua ligação.");
+                    if (!cachedPwd) {
+                        Alert.alert("Erro de Segurança", "Não foi possível validar as chaves. Verifique a sua ligação.");
+                    }
                 }
             } else {
-                console.error("[PoliceAuth] ERRO: Documento não existe.");
-                Alert.alert("Sistema Indisponível", "O Comando ainda não foi inicializado no servidor.");
+                if (!cachedPwd) {
+                    Alert.alert("Sistema Indisponível", "O Comando ainda não foi configurado.");
+                }
             }
         } catch (err) {
-            console.error("[PoliceAuth] Erro inesperado:", err);
-            Alert.alert("Ligação Falhou", "Ligue-se à internet para aceder ao Comando.");
+            // Sem internet — se tiver cache, o login funciona normalmente sem mostrar erro
+            const cachedPwd = await getUserSession('gogoma_cmd_pwd_cache');
+            if (!cachedPwd) {
+                Alert.alert("Sem Ligação", "Sem internet e sem dados guardados. Ligue-se à rede e tente novamente.");
+            }
+            // Se tem cache, não mostra erro nenhum — o sistema funciona offline
         } finally {
             setLoadingCreds(false);
         }
