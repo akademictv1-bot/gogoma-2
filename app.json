@@ -17,7 +17,8 @@
       "bundleIdentifier": "com.gogoma",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "O GOGOMA usa sua localização para enviar socorro imediato em caso de emergência.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "O GOGOMA precisa da sua localização para garantir que a ajuda chegue ao local exato, mesmo se o app for minimizado após o alerta."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "O GOGOMA precisa da sua localização para garantir que a ajuda chegue ao local exato, mesmo se o app for minimizado após o alerta.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

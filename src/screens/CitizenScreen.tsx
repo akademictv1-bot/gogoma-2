@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
-import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, ArrowLeft } from 'lucide-react-native';
+import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, ArrowLeft, Camera, X } from 'lucide-react-native';
 import tw from 'twrnc';
+import * as ImagePicker from 'expo-image-picker';
 
 import Header from '../components/Header';
 import SOSButton from '../components/SOSButton';
 import AuthForm from '../components/AuthForm';
 
-import { db } from '../services/firebase';
+import { db, storage } from '../services/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc } from 'firebase/firestore';
 import { getCurrentLocation, watchLocation } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
@@ -37,6 +39,8 @@ const CitizenScreen: React.FC = () => {
     const [working, setWorking] = useState(false);
     const [sending, setSending] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
+    const [selectedImages, setSelectedImages] = useState<string[]>([]);
+    const [uploadingImages, setUploadingImages] = useState(false);
 
     // Estados para qualidade do GPS
     const [gpsQuality, setGpsQuality] = useState<'excellent' | 'good' | 'poor' | 'none'>('none');
@@ -197,35 +201,67 @@ const CitizenScreen: React.FC = () => {
         }
     };
 
+    const pickImage = async () => {
+        if (selectedImages.length >= 2) {
+            Alert.alert("Limite", "Máximo 2 fotos.");
+            return;
+        }
+
+        // No Web, a melhor experiência é abrir a galeria diretamente
+        // O navegador já oferece a opção de ficheiro ou câmara se disponível
+        if (Platform.OS === 'web') {
+            try {
+                const result = await ImagePicker.launchImageLibraryAsync({
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    allowsEditing: true,
+                    quality: 0.5,
+                });
+                if (!result.canceled) {
+                    setSelectedImages([...selectedImages, result.assets[0].uri]);
+                }
+            } catch (err) {
+                console.error("Erro ao abrir galeria no Web:", err);
+            }
+            return;
+        }
+
+        // No Telemóvel, abrimos a CÂMARA diretamente (regra: fotos reais do momento)
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert("Permissão", "Precisamos de acesso à câmara.");
+            return;
+        }
+
+        try {
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 0.5,
+            });
+            if (!result.canceled) {
+                setSelectedImages([...selectedImages, result.assets[0].uri]);
+            }
+        } catch (err) {
+            console.error("Erro ao abrir câmara:", err);
+            Alert.alert("Erro", "Não foi possível abrir a câmara.");
+        }
+    };
+
+    const removeImage = (index: number) => {
+        const newImages = [...selectedImages];
+        newImages.splice(index, 1);
+        setSelectedImages(newImages);
+    };
+
     const handleSOS = async () => {
         if (!profile) return;
 
         const currentAccuracy = gpsAccuracy || 999;
+        const isLowAccuracy = !location || location.lat === 0 || currentAccuracy > 30;
 
-        // Se o GPS está bom (< 30m), envia direto para ser ultra-rápido
-        if (location && location.lat !== 0 && currentAccuracy <= 30) {
-            await sendSOSAlert(false); // isLowAccuracy = false
-            return;
-        }
-
-        // Se o GPS está ruim, negado ou demorando (>30m ou null)
-        let message = "A sua localização exata está a ser obtida ou é imprecisa.";
-        if (gpsDenied) message = "O acesso ao GPS foi negado.";
-        else if (currentAccuracy > 30 && currentAccuracy < 999) message = `O sinal do GPS está fraco (precisão: ${currentAccuracy.toFixed(0)}m).`;
-        else if (!location) message = "Ainda não conseguimos obter a sua localização.";
-
-        Alert.alert(
-            '🚨 AJUDA IMEDIATA',
-            `${message}\n\nDeseja enviar o socorro agora com os seus dados de registo? O Comando poderá ligar para confirmar o local exato.`,
-            [
-                { text: 'Aguardar GPS', style: 'cancel' },
-                {
-                    text: 'Enviar Socorro Já',
-                    style: 'destructive',
-                    onPress: () => sendSOSAlert(true) // isLowAccuracy = true
-                }
-            ]
-        );
+        // Enviar IMEDIATAMENTE sem diálogos de bloqueio para ser ultra-rápido
+        // A marcação de precisão vai para o banco para o operador saber
+        await sendSOSAlert(isLowAccuracy);
     };
 
     // Função separada para enviar alerta (após validações)
@@ -233,6 +269,25 @@ const CitizenScreen: React.FC = () => {
         setSending(true);
         setErrorMsg(null);
         try {
+            const imageUrls: string[] = [];
+
+            // Upload de imagens se existirem
+            if (selectedImages.length > 0) {
+                setUploadingImages(true);
+                for (let i = 0; i < selectedImages.length; i++) {
+                    const uri = selectedImages[i];
+                    const response = await fetch(uri);
+                    const blob = await response.blob();
+                    const fileName = `sos_${Date.now()}_${i}.jpg`;
+                    const storageRef = ref(storage, `alertas/${fileName}`);
+                    await uploadBytes(storageRef, blob);
+                    const url = await getDownloadURL(storageRef);
+                    imageUrls.push(url);
+                }
+                setUploadingImages(false);
+            }
+
+            // Documento de emergência com timestamp e dados do perfil
             await addDoc(collection(db, 'emergencias'), {
                 userName: profile!.name,
                 contactNumber: profile!.phoneNumber,
@@ -242,32 +297,39 @@ const CitizenScreen: React.FC = () => {
                     lng: location?.lng || null
                 },
                 gpsAccuracy: gpsAccuracy || null,
-                isLowAccuracy: isLowAccuracy, // Marcação para o operador
+                isLowAccuracy: isLowAccuracy,
                 type: selectedType || EmergencyType.GENERAL,
                 neighborhood: profile!.neighborhood,
                 manualAddress: `${profile!.city}, ${profile!.neighborhood}`,
                 timestamp: Date.now(),
                 status: AlertStatus.NEW,
-                dataAtualizacao: Date.now()
+                dataAtualizacao: Date.now(),
+                images: imageUrls
             });
 
-            // Enviar Notificação Push para Operadores
+            // Notificação interna (não bloqueia o UI)
             sendPushNotification(
                 `🚑 SOS: ${selectedType || 'Emergência'}`,
-                `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!${isLowAccuracy ? ' (Sinal GPS Fraco)' : ''}`
-            );
+                `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!`
+            ).catch(() => { }); // Ignora erro de notificação para não travar o sucesso
 
-            Alert.alert(
-                '✅ SOS Enviado!',
-                isLowAccuracy
-                    ? "Alerta enviado com sinal de GPS fraco. Mantenha o telefone livre para uma possível chamada do Comando."
-                    : `Alerta enviado com sucesso! Ajuda está a caminho do local identificado.`,
-                [{ text: 'OK', onPress: () => setStep(2) }]
-            );
+            // Passar imediatamente para a tela de sucesso
+            setStep(2);
         } catch (err: any) {
             console.error("Erro ao enviar SOS:", err);
-            Alert.alert("Falha Crítica", `Não foi possível enviar o SOS: ${err.message || "Erro desconhecido"}.`);
-            setErrorMsg("Falha ao enviar SOS. Verifique a sua ligação.");
+
+            // Mensagens simplificadas para o utilizador
+            let userError = "Ligue-se à internet para pedir socorro.";
+            if (err.message?.includes('network') || err.message?.includes('offline')) {
+                userError = "Sem sinal de rede. Verifique a sua ligação.";
+            }
+
+            Alert.alert(
+                "Falha no Envio",
+                `${userError}\n\nSe for urgente, use a Central de Ajuda no topo.`,
+                [{ text: 'OK' }]
+            );
+            setErrorMsg(userError);
         } finally {
             setSending(false);
         }
@@ -330,11 +392,7 @@ const CitizenScreen: React.FC = () => {
     }
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={tw`flex-1 bg-black`}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        >
+        <View style={tw`flex-1 bg-black`}>
             <Header
                 title={profile?.name || "Cidadão"}
                 subtitle={profile?.neighborhood}
@@ -342,127 +400,159 @@ const CitizenScreen: React.FC = () => {
                 actionIcon={<Info size={18} color={NEON_YELLOW} />}
             />
 
-            {/* Modal de Ajuda / SOS Alternativo */}
-            <Modal visible={showHelp} animationType="slide" transparent={false}>
-                <View style={tw`flex-1 bg-[#0a0a0c]`}>
-                    <View style={tw`p-4 bg-[#0d0d10] border-b border-white/10 flex-row items-center gap-4`}>
-                        <TouchableOpacity onPress={() => setShowHelp(false)} style={tw`p-2 bg-white/5 rounded-xl`}>
-                            <ArrowLeft size={20} color="white" />
-                        </TouchableOpacity>
-                        <Text style={tw`text-sm font-black uppercase text-red-600`}>CENTRAL DE AJUDA</Text>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={tw`flex-1`}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+            >
+
+                {/* Modal de Ajuda / SOS Alternativo */}
+                <Modal visible={showHelp} animationType="slide" transparent={false}>
+                    <View style={tw`flex-1 bg-[#0a0a0c]`}>
+                        <View style={tw`p-4 bg-[#0d0d10] border-b border-white/10 flex-row items-center gap-4`}>
+                            <TouchableOpacity onPress={() => setShowHelp(false)} style={tw`p-2 bg-white/5 rounded-xl`}>
+                                <ArrowLeft size={20} color="white" />
+                            </TouchableOpacity>
+                            <Text style={tw`text-sm font-black uppercase text-red-600`}>CENTRAL DE AJUDA</Text>
+                        </View>
+
+                        {configLoaded ? (
+                            <ScrollView style={tw`flex-1 p-8 gap-8`} keyboardShouldPersistTaps="handled">
+                                <View style={tw`bg-[#121216] p-10 rounded-[40px] border border-white/5 shadow-2xl`}>
+                                    <View style={tw`w-20 h-20 bg-red-600/10 rounded-full items-center justify-center mb-8 self-center`}>
+                                        <Phone size={40} color="#ef4444" />
+                                    </View>
+                                    <Text style={tw`text-[10px] font-black uppercase text-white/30 text-center mb-4 tracking-widest`}>LINHA DE EMERGÊNCIA</Text>
+                                    <Text style={tw`text-4xl font-black text-white text-center mb-2`}>{helpPhone}</Text>
+                                    <Text style={tw`text-[11px] font-bold text-red-500 text-center uppercase mb-10 tracking-widest`}>{helpText}</Text>
+
+                                    <TouchableOpacity
+                                        onPress={() => Linking.openURL(`tel:${helpPhone}`)}
+                                        style={tw`w-full py-6 bg-red-600 rounded-3xl items-center shadow-2xl flex-row justify-center gap-4`}
+                                    >
+                                        <Phone size={20} color="white" />
+                                        <Text style={tw`text-white font-black uppercase text-sm`}>LIGAR AGORA</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                <View style={tw`bg-[#121216] p-8 rounded-[32px] border border-white/5`}>
+                                    <View style={tw`flex-row items-center gap-3 mb-6`}>
+                                        <Info size={18} color="#fbff00" />
+                                        <Text style={tw`text-[10px] font-black uppercase text-white/40 tracking-widest`}>SOBRE O GOGOMA</Text>
+                                    </View>
+                                    <Text style={tw`text-sm text-white/80 leading-relaxed font-bold`}>Este aplicativo foi desenvolvido para agilizar o atendimento de emergências. Seus dados de localização e registro são enviados diretamente para o Centro de Operações.</Text>
+                                </View>
+
+                                <View style={tw`bg-red-600/5 p-8 rounded-[32px] border border-red-600/10 mb-20`}>
+                                    <View style={tw`flex-row items-center gap-3 mb-4`}>
+                                        <AlertTriangle size={18} color="#ef4444" />
+                                        <Text style={tw`text-[10px] font-black uppercase text-red-500 tracking-widest`}>AVISO LEGAL</Text>
+                                    </View>
+                                    <Text style={tw`text-[11px] text-white/50 font-bold leading-relaxed`}>O ABUSO DO SISTEMA E TROTES SÃO CRIMES. USE COM RESPONSABILIDADE PARA NÃO COMPROMETER O SOCORRO DE QUEM REALMENTE PRECISA.</Text>
+
+                                    <TouchableOpacity
+                                        onPress={async () => {
+                                            await clearUserSession('gogoma_user_profile');
+                                            setIsRegistered(false);
+                                            setProfile(null);
+                                            setStep(0);
+                                            setShowHelp(false);
+                                        }}
+                                        style={tw`flex-row items-center justify-center gap-3 p-6 bg-white/5 border border-white/10 rounded-2xl mt-8`}
+                                    >
+                                        <RefreshCcw size={16} color="#ef4444" />
+                                        <Text style={tw`text-[10px] font-black uppercase text-red-500`}>SAIR / MUDAR PERFIL</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </ScrollView>
+                        ) : (
+                            <View style={tw`flex-1 items-center justify-center`}>
+                                <RefreshCcw size={32} color={NEON_YELLOW} style={tw`opacity-20`} />
+                            </View>
+                        )}
+                    </View>
+                </Modal>
+
+                <View style={tw`flex-1 p-6 justify-center gap-6`}>
+                    <View style={[
+                        tw`flex-row items-center justify-center gap-3 py-2.5 px-6 rounded-full self-center border text-[9px] font-black uppercase tracking-[0.2em] shadow-lg`,
+                        location ? tw`bg-green-600/10 border-green-500/30` : tw`bg-[#fbff0010] border-[#fbff0033]`
+                    ]}>
+                        <MapPin size={14} color={location ? "#22c55e" : NEON_YELLOW} />
+                        <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, { color: location ? "#22c55e" : NEON_YELLOW }]}>
+                            {location ? `GPS OPERACIONAL (±${Math.round(gpsAccuracy || 0)}m)` : 'OBTENDO COORDENADAS...'}
+                        </Text>
                     </View>
 
-                    {configLoaded ? (
-                        <ScrollView style={tw`flex-1 p-8 gap-8`} keyboardShouldPersistTaps="handled">
-                            <View style={tw`bg-[#121216] p-10 rounded-[40px] border border-white/5 shadow-2xl`}>
-                                <View style={tw`w-20 h-20 bg-red-600/10 rounded-full items-center justify-center mb-8 self-center`}>
-                                    <Phone size={40} color="#ef4444" />
-                                </View>
-                                <Text style={tw`text-[10px] font-black uppercase text-white/30 text-center mb-4 tracking-widest`}>LINHA DE EMERGÊNCIA</Text>
-                                <Text style={tw`text-4xl font-black text-white text-center mb-2`}>{helpPhone}</Text>
-                                <Text style={tw`text-[11px] font-bold text-red-500 text-center uppercase mb-10 tracking-widest`}>{helpText}</Text>
-
-                                <TouchableOpacity
-                                    onPress={() => Linking.openURL(`tel:${helpPhone}`)}
-                                    style={tw`w-full py-6 bg-red-600 rounded-3xl items-center shadow-2xl flex-row justify-center gap-4`}
-                                >
-                                    <Phone size={20} color="white" />
-                                    <Text style={tw`text-white font-black uppercase text-sm`}>LIGAR AGORA</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            <View style={tw`bg-[#121216] p-8 rounded-[32px] border border-white/5`}>
-                                <View style={tw`flex-row items-center gap-3 mb-6`}>
-                                    <Info size={18} color="#fbff00" />
-                                    <Text style={tw`text-[10px] font-black uppercase text-white/40 tracking-widest`}>SOBRE O GOGOMA</Text>
-                                </View>
-                                <Text style={tw`text-sm text-white/80 leading-relaxed font-bold`}>Este aplicativo foi desenvolvido para agilizar o atendimento de emergências. Seus dados de localização e registro são enviados diretamente para o Centro de Operações.</Text>
-                            </View>
-
-                            <View style={tw`bg-red-600/5 p-8 rounded-[32px] border border-red-600/10 mb-20`}>
-                                <View style={tw`flex-row items-center gap-3 mb-4`}>
-                                    <AlertTriangle size={18} color="#ef4444" />
-                                    <Text style={tw`text-[10px] font-black uppercase text-red-500 tracking-widest`}>AVISO LEGAL</Text>
-                                </View>
-                                <Text style={tw`text-[11px] text-white/50 font-bold leading-relaxed`}>O ABUSO DO SISTEMA E TROTES SÃO CRIMES. USE COM RESPONSABILIDADE PARA NÃO COMPROMETER O SOCORRO DE QUEM REALMENTE PRECISA.</Text>
-
-                                <TouchableOpacity
-                                    onPress={async () => {
-                                        await clearUserSession('gogoma_user_profile');
-                                        setIsRegistered(false);
-                                        setProfile(null);
-                                        setStep(0);
-                                        setShowHelp(false);
-                                    }}
-                                    style={tw`flex-row items-center justify-center gap-3 p-6 bg-white/5 border border-white/10 rounded-2xl mt-8`}
-                                >
-                                    <RefreshCcw size={16} color="#ef4444" />
-                                    <Text style={tw`text-[10px] font-black uppercase text-red-500`}>SAIR / MUDAR PERFIL</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </ScrollView>
-                    ) : (
-                        <View style={tw`flex-1 items-center justify-center`}>
-                            <RefreshCcw size={32} color={NEON_YELLOW} style={tw`opacity-20`} />
+                    {gpsDenied && (
+                        <View style={tw`bg-red-600/20 border border-red-600/40 p-3 rounded-xl flex-row items-center justify-center gap-2`}>
+                            <WifiOff size={14} color="#ef4444" />
+                            <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>GPS BLOQUEADO. ATIVE NAS CONFIGURAÇÕES.</Text>
                         </View>
                     )}
-                </View>
-            </Modal>
 
-            <View style={tw`flex-1 p-6 justify-center gap-6`}>
-                <View style={[
-                    tw`flex-row items-center justify-center gap-3 py-2.5 px-6 rounded-full self-center border text-[9px] font-black uppercase tracking-[0.2em] shadow-lg`,
-                    location ? tw`bg-green-600/10 border-green-500/30` : tw`bg-[#fbff0010] border-[#fbff0033]`
-                ]}>
-                    <MapPin size={14} color={location ? "#22c55e" : NEON_YELLOW} />
-                    <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, { color: location ? "#22c55e" : NEON_YELLOW }]}>
-                        {location ? `GPS OPERACIONAL (±${Math.round(gpsAccuracy || 0)}m)` : 'OBTENDO COORDENADAS...'}
-                    </Text>
-                </View>
+                    <SOSButton onClick={handleSOS} loading={sending} />
 
-                {gpsDenied && (
-                    <View style={tw`bg-red-600/20 border border-red-600/40 p-3 rounded-xl flex-row items-center justify-center gap-2`}>
-                        <WifiOff size={14} color="#ef4444" />
-                        <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>GPS BLOQUEADO. ATIVE NAS CONFIGURAÇÕES.</Text>
+                    <View style={tw`flex-row flex-wrap justify-center gap-4`}>
+                        {[
+                            { type: EmergencyType.POLICE_CIVIL, icon: <Shield size={32} color={selectedType === EmergencyType.POLICE_CIVIL ? "black" : "#64748b"} />, label: 'CIVIL', color: tw`bg-[#fbff00]` },
+                            { type: EmergencyType.POLICE_TRAFFIC, icon: <Car size={32} color={selectedType === EmergencyType.POLICE_TRAFFIC ? "white" : "#64748b"} />, label: 'TRÂNSITO', color: tw`bg-orange-600` },
+                            { type: EmergencyType.DISASTER, icon: <Activity size={32} color={selectedType === EmergencyType.DISASTER ? "white" : "#64748b"} />, label: 'CLIMA', color: tw`bg-teal-600` }
+                        ].map((item) => (
+                            <TouchableOpacity
+                                key={item.label}
+                                onPress={() => setSelectedType(item.type as EmergencyType)}
+                                style={[
+                                    tw`p-5 rounded-3xl items-center gap-3 border-2 transition-all`,
+                                    selectedType === item.type ? [item.color, tw`border-white/20 scale-105 shadow-xl`] : tw`bg-[#0d0d10] border-white/5`
+                                ]}
+                            >
+                                {item.icon}
+                                <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, selectedType === item.type ? tw`text-white` : tw`text-slate-500`, item.type === EmergencyType.POLICE_CIVIL && selectedType === item.type && tw`text-black`]}>{item.label}</Text>
+                            </TouchableOpacity>
+                        ))}
                     </View>
-                )}
+                </View>
 
-                <SOSButton onClick={handleSOS} loading={sending} />
-
-                <View style={tw`flex-row flex-wrap justify-center gap-4`}>
-                    {[
-                        { type: EmergencyType.POLICE_CIVIL, icon: <Shield size={32} color={selectedType === EmergencyType.POLICE_CIVIL ? "black" : "#64748b"} />, label: 'CIVIL', color: tw`bg-[#fbff00]` },
-                        { type: EmergencyType.POLICE_TRAFFIC, icon: <Car size={32} color={selectedType === EmergencyType.POLICE_TRAFFIC ? "white" : "#64748b"} />, label: 'TRÂNSITO', color: tw`bg-orange-600` },
-                        { type: EmergencyType.DISASTER, icon: <Activity size={32} color={selectedType === EmergencyType.DISASTER ? "white" : "#64748b"} />, label: 'CLIMA', color: tw`bg-teal-600` }
-                    ].map((item) => (
+                <View style={tw`p-6 bg-[#0d0d10] border-t border-white/5`}>
+                    {selectedImages.length > 0 && (
+                        <View style={tw`flex-row gap-4 mb-4`}>
+                            {selectedImages.map((uri, idx) => (
+                                <View key={idx} style={tw`relative`}>
+                                    <Image source={{ uri }} style={tw`w-20 h-20 rounded-xl border border-white/20`} />
+                                    <TouchableOpacity
+                                        onPress={() => removeImage(idx)}
+                                        style={tw`absolute -top-2 -right-2 bg-red-600 rounded-full p-1 border border-black shadow-lg`}
+                                    >
+                                        <X size={12} color="white" />
+                                    </TouchableOpacity>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+                    <View style={tw`flex-row items-center gap-3`}>
                         <TouchableOpacity
-                            key={item.label}
-                            onPress={() => setSelectedType(item.type as EmergencyType)}
-                            style={[
-                                tw`p-5 rounded-3xl items-center gap-3 border-2 transition-all`,
-                                selectedType === item.type ? [item.color, tw`border-white/20 scale-105 shadow-xl`] : tw`bg-[#0d0d10] border-white/5`
-                            ]}
+                            onPress={pickImage}
+                            style={tw`bg-white/5 p-4 rounded-3xl border border-white/10`}
                         >
-                            {item.icon}
-                            <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, selectedType === item.type ? tw`text-white` : tw`text-slate-500`, item.type === EmergencyType.POLICE_CIVIL && selectedType === item.type && tw`text-black`]}>{item.label}</Text>
+                            <Camera size={24} color={selectedImages.length > 0 ? NEON_YELLOW : "#64748b"} />
                         </TouchableOpacity>
-                    ))}
+                        <View style={tw`flex-1 relative flex-row items-center bg-black border border-white/5 rounded-3xl px-6 py-1`}>
+                            <TextInput
+                                placeholder="DÊ DETALHES OU FOTOS"
+                                placeholderTextColor="#475569"
+                                style={tw`flex-1 py-5 text-white text-sm font-bold uppercase`}
+                                value={description}
+                                onChangeText={setDescription}
+                            />
+                        </View>
+                    </View>
+                    {uploadingImages && (
+                        <Text style={tw`text-[10px] text-yellow-500 font-bold mt-2 text-center uppercase`}>Enviando fotos...</Text>
+                    )}
                 </View>
-            </View>
-
-            <View style={tw`p-6 bg-[#0d0d10] border-t border-white/5`}>
-                <View style={tw`relative flex-row items-center bg-black border border-white/5 rounded-3xl px-6 py-1`}>
-                    <MapPin size={24} color="#64748b" style={tw`mr-3`} />
-                    <TextInput
-                        placeholder="DÊ DETALHES (OPCIONAL)"
-                        placeholderTextColor="#475569"
-                        style={tw`flex-1 py-5 text-white text-sm font-bold uppercase`}
-                        value={description}
-                        onChangeText={setDescription}
-                    />
-                </View>
-            </View>
-        </KeyboardAvoidingView>
+            </KeyboardAvoidingView>
+        </View>
     );
 };
 

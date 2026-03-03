@@ -41,4 +41,5 @@ export interface EmergencyAlert {
     neighborhood?: string;
     dataAtualizacao?: number;
     isLowAccuracy?: boolean;
+    images?: string[];
 }

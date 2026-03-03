@@ -10,7 +10,7 @@ import { collection, onSnapshot, doc, getDoc, updateDoc, setDoc, deleteDoc, writ
 // Gemini service removido - feature de IA desabilitada
 import { EmergencyAlert, AlertStatus } from '../types';
 import { startAlarm, stopAlarm, unlockAudio, playImmediateBeep } from '../services/alarmService';
-import { decryptCredentials } from '../services/cryptoUtils';
+import { decryptValue } from '../services/cryptoUtils';
 import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
 
 import Header from '../components/Header';
@@ -44,8 +44,8 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         ]).start();
     };
 
-    // Credenciais agora encriptadas no Firestore
-    const [dbCredentials, setDbCredentials] = useState<{ id: string, pass: string } | null>(null);
+    // Credenciais: ID local e Senha encriptada no Firestore
+    const [dbPassword, setDbPassword] = useState<string | null>(null);
     const [loadingCreds, setLoadingCreds] = useState(true);
 
     const fetchCreds = async () => {
@@ -60,38 +60,39 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
 
                 if (!secretKey) {
                     console.error("[PoliceAuth] ERRO: EXPO_PUBLIC_CRYPTO_KEY não encontrada.");
-                    Alert.alert("Erro de Ambiente", "A chave EXPO_PUBLIC_CRYPTO_KEY não foi encontrada. Por favor, reinicie o servidor Expo (Ctrl+C e npx expo start).");
+                    Alert.alert("Erro de Sistema", "Ocorreu um erro na configuração de segurança do Comando. Por favor, contacte o suporte técnico.");
                     return;
                 }
 
-                if (!data.encryptedId || !data.encryptedPassword) {
-                    Alert.alert("Dados Incompletos", "O documento no Firestore existe, mas faltam os campos 'encryptedId' ou 'encryptedPassword'. Verifique se escreveu os nomes exatamente assim.");
+                console.log("[PoliceAuth] Documento lido:", data);
+
+                if (!data.encryptedPassword) {
+                    Alert.alert("Configuração Incompleta", "Os dados de acesso ainda não foram configurados no servidor.");
                     return;
                 }
 
                 try {
-                    const decrypted = decryptCredentials(
-                        data.encryptedId,
+                    const decryptedPassword = decryptValue(
                         data.encryptedPassword,
                         secretKey
                     );
 
-                    if (!decrypted.id || !decrypted.password) {
-                        throw new Error("Desencriptação falhou");
+                    if (!decryptedPassword) {
+                        throw new Error("Desencriptação da senha falhou");
                     }
 
-                    setDbCredentials({ id: decrypted.id, pass: decrypted.password });
+                    setDbPassword(decryptedPassword);
                 } catch (decError) {
-                    console.error("[PoliceAuth] Falha ao desencriptar:", decError);
-                    Alert.alert("Erro de Chave", "A chave no .env.local não consegue ler os dados do Firebase. Verifique se usou a mesma chave secreta para gerar os dados.");
+                    console.error("[PoliceAuth] Falha ao desencriptar senha:", decError);
+                    Alert.alert("Segurança", "Não foi possível validar as chaves de segurança. Tente novamente ou verifique a sua ligação.");
                 }
             } else {
                 console.error("[PoliceAuth] ERRO: Documento não existe.");
-                Alert.alert("Firestore Vazio", "Ainda não criou o documento 'comando_universal/credenciais' no Firebase.");
+                Alert.alert("Sistema Indisponível", "O Comando ainda não foi inicializado no servidor.");
             }
         } catch (err) {
             console.error("[PoliceAuth] Erro inesperado:", err);
-            Alert.alert("Erro de Conexão", "Falha ao ligar ao Firebase. Verifique se tem internet e se as regras de segurança permitem a leitura.");
+            Alert.alert("Ligação Falhou", "Ligue-se à internet para aceder ao Comando.");
         } finally {
             setLoadingCreds(false);
         }
@@ -104,20 +105,24 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
 
     const handleLogin = () => {
         if (loadingCreds) {
-            Alert.alert("Aguarde", "O sistema ainda está a carregar as credenciais de segurança...");
+            Alert.alert("Aguarde", "O sistema ainda está a carregar os dados de segurança...");
             return;
         }
 
-        if (!dbCredentials) {
-            const errorMsg = !process.env.EXPO_PUBLIC_CRYPTO_KEY
-                ? "Chave de criptografia (EXPO_PUBLIC_CRYPTO_KEY) não encontrada no seu ficheiro .env. Verifique o ficheiro e reinicie o servidor Expo."
-                : "Não foi possível carregar as credenciais do Firestore. Verifique a sua ligação à internet ou as regras de segurança do Firebase.";
+        const officialId = process.env.EXPO_PUBLIC_COMMAND_ID;
+        console.log("[PoliceAuth] Tentativa de Login:", {
+            badgeId: badgeId.trim(),
+            officialId,
+            hasDbPassword: !!dbPassword,
+            cryptoKeyExists: !!process.env.EXPO_PUBLIC_CRYPTO_KEY
+        });
 
-            Alert.alert("Erro no Servidor", errorMsg);
+        if (!dbPassword || !officialId) {
+            Alert.alert("Rede Indisponível", "Ligue-se à internet para validar o seu acesso ao Comando.");
             return;
         }
 
-        if (badgeId.trim() === dbCredentials.id && password === dbCredentials.pass) {
+        if (badgeId.trim() === officialId && password === dbPassword) {
             setIsAuthenticated(true);
             setAuthError(false);
             unlockAudio();
@@ -141,7 +146,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                 Alert.alert('Despacho Enviado', 'Equipa a caminho. O alerta ficará amarelo para todos os operadores.');
             }
         } catch (err: any) {
-            Alert.alert('Erro', `Não foi possível atualizar: ${err.message}`);
+            Alert.alert('Falha na Rede', `Ligue-se à internet para atualizar o alerta.`);
         }
     };
 
@@ -203,36 +208,43 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
             return;
         }
 
-        Alert.alert(
-            "Limpar Histórico",
-            `Deseja apagar permanentemente ${historyAlerts.length} registros do histórico?`,
-            [
-                { text: "Cancelar", style: "cancel" },
-                {
-                    text: "Apagar Tudo",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            // Firestore Batch tem limite de 500 operações. Vamos processar em blocos.
-                            const chunkSize = 400;
-                            for (let i = 0; i < historyAlerts.length; i += chunkSize) {
-                                const batch = writeBatch(db);
-                                const chunk = historyAlerts.slice(i, i + chunkSize);
-                                chunk.forEach(a => {
-                                    const docRef = doc(db, 'emergencias', a.id);
-                                    batch.delete(docRef);
-                                });
-                                await batch.commit();
-                            }
-                            Alert.alert("Sucesso", "Histórico limpo com sucesso.");
-                        } catch (error: any) {
-                            console.error("Erro ao apagar histórico:", error);
-                            Alert.alert("Erro", `Não foi possível apagar totalmente o histórico: ${error.message}`);
-                        }
-                    }
+        const runClear = async () => {
+            try {
+                const chunkSize = 400;
+                for (let i = 0; i < historyAlerts.length; i += chunkSize) {
+                    const batch = writeBatch(db);
+                    const chunk = historyAlerts.slice(i, i + chunkSize);
+                    chunk.forEach(a => {
+                        const docRef = doc(db, 'emergencias', a.id);
+                        batch.delete(docRef);
+                    });
+                    await batch.commit();
                 }
-            ]
-        );
+                Alert.alert("Sucesso", "Histórico limpo com sucesso.");
+            } catch (error: any) {
+                console.error("Erro ao apagar histórico:", error);
+                Alert.alert("Erro", `Não foi possível apagar totalmente o histórico: ${error.message}`);
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            if (window.confirm(`Deseja apagar permanentemente ${historyAlerts.length} registros do histórico?`)) {
+                runClear();
+            }
+        } else {
+            Alert.alert(
+                "Limpar Histórico",
+                `Deseja apagar permanentemente ${historyAlerts.length} registros do histórico?`,
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    {
+                        text: "Apagar Tudo",
+                        style: "destructive",
+                        onPress: runClear
+                    }
+                ]
+            );
+        }
     };
 
     // ──────────── LÓGICA DE ÁUDIO PROFISSIONAL ────────────
@@ -362,14 +374,14 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                             </Text>
                         </TouchableOpacity>
 
-                        {!dbCredentials && !loadingCreds && (
+                        {!dbPassword && !loadingCreds && (
                             <TouchableOpacity
                                 onPress={fetchCreds}
                                 activeOpacity={0.7}
                                 style={tw`mt-2 flex-row items-center justify-center gap-2`}
                             >
                                 <RefreshCcw size={14} color="#4b5563" />
-                                <Text style={tw`text-[#4b5563] text-[10px] font-bold uppercase`}>RECARREGAR CREDENCIAIS</Text>
+                                <Text style={tw`text-[#4b5563] text-[10px] font-bold uppercase`}>RECARREGAR SEGURANÇA</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -508,6 +520,23 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                                 </TouchableOpacity>
                             )}
                         </View>
+
+                        {selectedAlert?.images && selectedAlert.images.length > 0 && (
+                            <View style={tw`bg-[#121216] p-8 rounded-[32px] border border-white/5`}>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/30 mb-6`}>EVIDÊNCIAS VISUAIS</Text>
+                                <View style={tw`flex-row gap-4 flex-wrap justify-center`}>
+                                    {selectedAlert.images.map((url: string, idx: number) => (
+                                        <TouchableOpacity
+                                            key={idx}
+                                            onPress={() => Linking.openURL(url)}
+                                            style={tw`w-[45%] aspect-square rounded-2xl overflow-hidden border border-white/10`}
+                                        >
+                                            <Image source={{ uri: url }} style={tw`w-full h-full`} />
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                        )}
 
                         {/* Seção de IA Gemini removida - Feature desabilitada */}
                     </ScrollView>

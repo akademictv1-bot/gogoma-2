@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 
 const firebaseConfig = {
@@ -27,5 +28,7 @@ const db = initializeFirestore(app, {
     })
 });
 
-export { db };
+const storage = getStorage(app);
+
+export { db, storage };
 export default app;
