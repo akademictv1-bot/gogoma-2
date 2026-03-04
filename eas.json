@@ -8,12 +8,20 @@
             "distribution": "internal",
             "android": {
                 "buildType": "apk"
+            },
+            "env": {
+                "EXPO_PUBLIC_CRYPTO_KEY": "WjH9lM4eN2aU7sK0oR5cT8vX",
+                "EXPO_PUBLIC_COMMAND_ID": "PRM_9922"
             }
         },
         "production": {
             "node": "20.10.0",
             "android": {
                 "buildType": "app-bundle"
+            },
+            "env": {
+                "EXPO_PUBLIC_CRYPTO_KEY": "WjH9lM4eN2aU7sK0oR5cT8vX",
+                "EXPO_PUBLIC_COMMAND_ID": "PRM_9922"
             }
         }
     },
