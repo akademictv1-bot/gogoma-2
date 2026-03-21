@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, KeyboardAvoidingView, Dimensions } from 'react-native';
+import { Image } from 'expo-image';
 import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, ArrowLeft, Camera, X } from 'lucide-react-native';
 import tw from 'twrnc';
 import * as ImagePicker from 'expo-image-picker';
+import NetInfo from '@react-native-community/netinfo';
 
 import Header from '../components/Header';
 import SOSButton from '../components/SOSButton';
@@ -10,8 +12,8 @@ import AuthForm from '../components/AuthForm';
 
 import { db, storage } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc } from 'firebase/firestore';
-import { getCurrentLocation, watchLocation } from '../services/location';
+import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { getCurrentLocation, watchLocation, getAddressFromCoords } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
 import { validateMozambiquePhone } from '../services/cryptoUtils';
 import { sendPushNotification } from '../services/notificationService';
@@ -161,27 +163,53 @@ const CitizenScreen: React.FC = () => {
             return;
         }
 
+        const netState = await NetInfo.fetch();
+        if (!netState.isConnected) {
+            setErrorMsg("Não foi possível conectar. Por favor, ligue sua internet e tente novamente.");
+            return;
+        }
+
         setWorking(true);
         setErrorMsg(null);
         try {
             let finalProfile: UserProfile;
+
+            const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T> => {
+                let timeoutHandle: any;
+                const timeoutPromise = new Promise<T>((_, reject) => {
+                    timeoutHandle = setTimeout(() => reject(new Error('TIMEOUT_ERROR')), timeoutMs);
+                });
+                return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
+            };
+
             if (authMode === 'register') {
                 if (!regCity.trim() || !regNeighborhood.trim()) {
                     throw new Error("Cidade e Bairro são obrigatórios.");
                 }
 
-                // Verificar existente
-                const userDoc = await getDoc(doc(db, 'usuarios', regPhone));
+                // Verificar existente com timeout
+                const userDoc = await withTimeout(getDoc(doc(db, 'usuarios', regPhone)));
                 if (userDoc.exists()) throw new Error('Este número de telemóvel já está cadastrado.');
 
                 const q = query(collection(db, 'usuarios'), where('name', '==', regName));
-                const qs = await getDocs(q);
+                const qs = await withTimeout(getDocs(q));
                 if (!qs.empty) throw new Error('Este nome já está em uso.');
 
                 finalProfile = { name: regName, phoneNumber: regPhone, city: regCity, neighborhood: regNeighborhood };
-                await setDoc(doc(db, 'usuarios', regPhone), { ...finalProfile, dataRegisto: Date.now() });
+                
+                try {
+                     await withTimeout(setDoc(doc(db, 'usuarios', regPhone), { ...finalProfile, dataRegisto: Date.now() }));
+                     // "Conta criada com sucesso! Dados sincronizados." happen implicitly, could Toast it
+                } catch (saveErr: any) {
+                     if (saveErr.message === 'TIMEOUT_ERROR') {
+                         // A criação de conta pode ficar pendente localmente (Firebase cache), mas para ser seguro mostramos q não acabou ainda.
+                         throw saveErr; 
+                     } else {
+                         throw saveErr;
+                     }
+                }
             } else {
-                const userDoc = await getDoc(doc(db, 'usuarios', regPhone));
+                const userDoc = await withTimeout(getDoc(doc(db, 'usuarios', regPhone)));
                 if (!userDoc.exists()) {
                     throw new Error("Telefone não encontrado. Por favor, registe-se.");
                 }
@@ -195,7 +223,19 @@ const CitizenScreen: React.FC = () => {
             setProfile(finalProfile);
             setIsRegistered(true);
         } catch (err: any) {
-            setErrorMsg(err.message || "Erro na autenticação. Verifique sua conexão.");
+            if (err.message === 'TIMEOUT_ERROR') {
+                 setErrorMsg("Sua rede não está disponível. Verifique sua conexão e tente novamente.");
+            } else if (err.message && (
+                err.message.includes('obrigatório') || 
+                err.message.includes('cadastrado') || 
+                err.message.includes('uso') || 
+                err.message.includes('encontrado') || 
+                err.message.includes('corresponde')
+            )) {
+                setErrorMsg(err.message);
+            } else {
+                setErrorMsg(authMode === 'register' ? "Falha ao criar conta. Tente novamente em alguns segundos." : "Algo deu errado. Verifique sua conexão de internet e tente novamente.");
+            }
         } finally {
             setWorking(false);
         }
@@ -259,43 +299,16 @@ const CitizenScreen: React.FC = () => {
         const currentAccuracy = gpsAccuracy || 999;
         const isLowAccuracy = !location || location.lat === 0 || currentAccuracy > 30;
 
-        // Enviar IMEDIATAMENTE sem diálogos de bloqueio para ser ultra-rápido
-        // A marcação de precisão vai para o banco para o operador saber
+        // Enviar IMEDIATAMENTE - Ultra-rápido conforme pedido
         await sendSOSAlert(isLowAccuracy);
     };
 
-    // Função separada para enviar alerta (após validações)
     const sendSOSAlert = async (isLowAccuracy: boolean) => {
         setSending(true);
         setErrorMsg(null);
         try {
-            const imageUrls: string[] = [];
-
-            // Upload de imagens se existirem
-            if (selectedImages.length > 0) {
-                setUploadingImages(true);
-                try {
-                    for (let i = 0; i < selectedImages.length; i++) {
-                        const uri = selectedImages[i];
-                        const response = await fetch(uri);
-                        const blob = await response.blob();
-                        const fileName = `sos_${Date.now()}_${i}.jpg`;
-                        const storageRef = ref(storage, `alertas/${fileName}`);
-                        await uploadBytes(storageRef, blob);
-                        const url = await getDownloadURL(storageRef);
-                        imageUrls.push(url);
-                    }
-                } catch (uploadErr) {
-                    // Se o upload falhar, o SOS é enviado MESMO ASSIM, sem as fotos
-                    // Isso é crítico: um SOS nunca pode falhar por causa de uma foto
-                    console.error("Aviso: falha no upload de imagem, SOS enviado sem fotos:", uploadErr);
-                } finally {
-                    setUploadingImages(false);
-                }
-            }
-
-            // Documento de emergência com timestamp e dados do perfil
-            await addDoc(collection(db, 'emergencias'), {
+            // 1. Criar o documento de emergência IMEDIATAMENTE (sem esperar as fotos)
+            const sosDoc = await addDoc(collection(db, 'emergencias'), {
                 userName: profile!.name,
                 contactNumber: profile!.phoneNumber,
                 description: description || "SOS IMEDIATO",
@@ -311,34 +324,89 @@ const CitizenScreen: React.FC = () => {
                 timestamp: Date.now(),
                 status: AlertStatus.NEW,
                 dataAtualizacao: Date.now(),
-                images: imageUrls
+                images: [],
+                
+                // Novos campos para Controle de Alarme Robusto
+                contador_toques: 0,
+                timestamp_ultimo_alarme: Date.now(),
+                estado_alarme: {
+                    tocando: false,
+                    despacho_silenciado: false,
+                    despacho_timestamp_silencio: null,
+                    alarmes_completados: 0
+                }
             });
 
-            // Notificação interna (não bloqueia o UI)
+            // 2. Transição visual imediata para sucesso
+            setStep(2);
+
+            // 3. Notificação (sem bloquear)
             sendPushNotification(
                 `🚑 SOS: ${selectedType || 'Emergência'}`,
                 `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!`
-            ).catch(() => { }); // Ignora erro de notificação para não travar o sucesso
+            ).catch(() => { });
 
-            // Passar imediatamente para a tela de sucesso
-            setStep(2);
+            // 4. Iniciar upload de fotos e RESOLUÇÃO DE ENDEREÇO em BACKGROUND (sem esperar)
+            const backgroundTasks = async () => {
+                // a) Upload de fotos
+                if (selectedImages.length > 0) {
+                    await uploadImagesInBackground(sosDoc.id, selectedImages);
+                }
+
+                // b) Resolução de Endereço Real (Reverse Geocode)
+                if (location?.lat && location?.lng) {
+                    const realAddress = await getAddressFromCoords(location.lat, location.lng);
+                    if (realAddress) {
+                        await updateDoc(doc(db, 'emergencias', sosDoc.id), {
+                            manualAddress: `${realAddress} (Auto) | ${profile!.city}, ${profile!.neighborhood} (Perfil)`,
+                            dataAtualizacao: Date.now()
+                        });
+                        console.log("[OSS] Endereço automático resolvido.");
+                    }
+                }
+            };
+
+            backgroundTasks().catch(err => {
+                console.error("Erro em tarefas de background:", err);
+            });
         } catch (err: any) {
             console.error("Erro ao enviar SOS:", err);
-
-            // Mensagens simplificadas para o utilizador
             let userError = "Ligue-se à internet para pedir socorro.";
             if (err.message?.includes('network') || err.message?.includes('offline')) {
                 userError = "Sem sinal de rede. Verifique a sua ligação.";
             }
-
-            Alert.alert(
-                "Falha no Envio",
-                `${userError}\n\nSe for urgente, use a Central de Ajuda no topo.`,
-                [{ text: 'OK' }]
-            );
+            Alert.alert("Falha no Envio", `${userError}\n\nUse a Central de Ajuda.`, [{ text: 'OK' }]);
             setErrorMsg(userError);
         } finally {
             setSending(false);
+        }
+    };
+
+    // Função auxiliar para upload em background sem travar o UI
+    const uploadImagesInBackground = async (docId: string, images: string[]) => {
+        try {
+            const imageUrls: string[] = [];
+            for (let i = 0; i < images.length; i++) {
+                const uri = images[i];
+                const response = await fetch(uri);
+                const blob = await response.blob();
+                const fileName = `sos_${docId}_${i}.jpg`;
+                const storageRef = ref(storage, `alertas/${fileName}`);
+                await uploadBytes(storageRef, blob);
+                const url = await getDownloadURL(storageRef);
+                imageUrls.push(url);
+            }
+
+            // Atualizar o documento com os links das imagens
+            if (imageUrls.length > 0) {
+                await updateDoc(doc(db, 'emergencias', docId), {
+                    images: imageUrls,
+                    dataAtualizacao: Date.now()
+                });
+                console.log("[OSS] Imagens de background enviadas com sucesso.");
+            }
+        } catch (err) {
+            console.error("[OSS] Erro ao enviar imagens em background:", err);
         }
     };
 
@@ -348,20 +416,20 @@ const CitizenScreen: React.FC = () => {
 
     if (!isRegistered) {
         return (
-            <ScrollView contentContainerStyle={tw`flex-grow bg-[#050507] p-6`}>
-                <View style={tw`items-center mb-8 pt-10`}>
-                    <View style={[tw`w-40 h-40 bg-white/5 p-4 rounded-[48px] mb-8 border-2 border-[#fbff0022] backdrop-blur-xl items-center justify-center`, { shadowColor: NEON_YELLOW, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.15, shadowRadius: 30 }]}>
-                        <Image source={{ uri: municipioLogo }} style={[tw`w-[85%] h-[85%]`, { resizeMode: 'contain' }]} />
+            <ScrollView contentContainerStyle={tw`flex-grow bg-[#050507] p-6`} keyboardShouldPersistTaps="handled">
+                <View style={tw`items-center mb-6 pt-4`}>
+                    <View style={[tw`w-32 h-32 bg-white/5 p-4 rounded-[32px] mb-6 border-2 border-[#fbff0022] backdrop-blur-xl items-center justify-center`, { shadowColor: NEON_YELLOW, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.15, shadowRadius: 30 }]}>
+                        <Image source={{ uri: municipioLogo }} style={[tw`w-[85%] h-[85%]`]} contentFit="contain" transition={200} />
                     </View>
-                    <Text style={[tw`text-5xl font-black uppercase tracking-tighter text-center`, { color: NEON_YELLOW, textShadowColor: `${NEON_YELLOW}44`, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 30 }]}>PORTAL{"\n"}CIDADÃO</Text>
-                    <Text style={tw`text-slate-500 text-[10px] font-black mt-4 uppercase tracking-[0.4em] opacity-60 text-center`}>Moçambique Digital • Governo Municipal</Text>
+                    <Text style={[tw`text-4xl font-black uppercase tracking-tighter text-center`, { color: NEON_YELLOW, textShadowColor: `${NEON_YELLOW}44`, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 30 }]}>PORTAL{"\n"}CIDADÃO</Text>
+                    <Text style={tw`text-slate-500 text-[10px] font-black mt-3 uppercase tracking-[0.4em] opacity-60 text-center`}>Moçambique Digital • Governo Municipal</Text>
                 </View>
 
-                <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-8 border border-white/5`}>
-                    <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-4 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
+                <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
+                    <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
                         <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-4 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
+                    <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
                         <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
                     </TouchableOpacity>
                 </View>
@@ -378,6 +446,7 @@ const CitizenScreen: React.FC = () => {
                         neighborhood: regNeighborhood, setNeighborhood: setRegNeighborhood
                     }}
                 />
+
             </ScrollView>
         );
     }
@@ -398,6 +467,10 @@ const CitizenScreen: React.FC = () => {
         );
     }
 
+    const screenHeight = Dimensions.get('screen').height;
+    // Posição base do botão SOS, ignorando mudanças da view do Android
+    const sosTargetTop = Math.max(0, (screenHeight * 0.45) - 140); 
+
     return (
         <View style={tw`flex-1 bg-black`}>
             <Header
@@ -407,158 +480,99 @@ const CitizenScreen: React.FC = () => {
                 actionIcon={<Info size={18} color={NEON_YELLOW} />}
             />
 
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={tw`flex-1`}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-            >
-
-                {/* Modal de Ajuda / SOS Alternativo */}
-                <Modal visible={showHelp} animationType="slide" transparent={false}>
-                    <View style={tw`flex-1 bg-[#0a0a0c]`}>
-                        <View style={tw`p-4 bg-[#0d0d10] border-b border-white/10 flex-row items-center gap-4`}>
-                            <TouchableOpacity onPress={() => setShowHelp(false)} style={tw`p-2 bg-white/5 rounded-xl`}>
-                                <ArrowLeft size={20} color="white" />
-                            </TouchableOpacity>
-                            <Text style={tw`text-sm font-black uppercase text-red-600`}>CENTRAL DE AJUDA</Text>
-                        </View>
-
-                        {configLoaded ? (
-                            <ScrollView style={tw`flex-1 p-8 gap-8`} keyboardShouldPersistTaps="handled">
-                                <View style={tw`bg-[#121216] p-10 rounded-[40px] border border-white/5 shadow-2xl`}>
-                                    <View style={tw`w-20 h-20 bg-red-600/10 rounded-full items-center justify-center mb-8 self-center`}>
-                                        <Phone size={40} color="#ef4444" />
-                                    </View>
-                                    <Text style={tw`text-[10px] font-black uppercase text-white/30 text-center mb-4 tracking-widest`}>LINHA DE EMERGÊNCIA</Text>
-                                    <Text style={tw`text-4xl font-black text-white text-center mb-2`}>{helpPhone}</Text>
-                                    <Text style={tw`text-[11px] font-bold text-red-500 text-center uppercase mb-10 tracking-widest`}>{helpText}</Text>
-
-                                    <TouchableOpacity
-                                        onPress={() => Linking.openURL(`tel:${helpPhone}`)}
-                                        style={tw`w-full py-6 bg-red-600 rounded-3xl items-center shadow-2xl flex-row justify-center gap-4`}
-                                    >
-                                        <Phone size={20} color="white" />
-                                        <Text style={tw`text-white font-black uppercase text-sm`}>LIGAR AGORA</Text>
-                                    </TouchableOpacity>
-                                </View>
-
-                                <View style={tw`bg-[#121216] p-8 rounded-[32px] border border-white/5`}>
-                                    <View style={tw`flex-row items-center gap-3 mb-6`}>
-                                        <Info size={18} color="#fbff00" />
-                                        <Text style={tw`text-[10px] font-black uppercase text-white/40 tracking-widest`}>SOBRE O GOGOMA</Text>
-                                    </View>
-                                    <Text style={tw`text-sm text-white/80 leading-relaxed font-bold`}>Este aplicativo foi desenvolvido para agilizar o atendimento de emergências. Seus dados de localização e registro são enviados diretamente para o Centro de Operações.</Text>
-                                </View>
-
-                                <View style={tw`bg-red-600/5 p-8 rounded-[32px] border border-red-600/10 mb-20`}>
-                                    <View style={tw`flex-row items-center gap-3 mb-4`}>
-                                        <AlertTriangle size={18} color="#ef4444" />
-                                        <Text style={tw`text-[10px] font-black uppercase text-red-500 tracking-widest`}>AVISO LEGAL</Text>
-                                    </View>
-                                    <Text style={tw`text-[11px] text-white/50 font-bold leading-relaxed`}>O ABUSO DO SISTEMA E TROTES SÃO CRIMES. USE COM RESPONSABILIDADE PARA NÃO COMPROMETER O SOCORRO DE QUEM REALMENTE PRECISA.</Text>
-
-                                    <TouchableOpacity
-                                        onPress={async () => {
-                                            await clearUserSession('gogoma_user_profile');
-                                            setIsRegistered(false);
-                                            setProfile(null);
-                                            setStep(0);
-                                            setShowHelp(false);
-                                        }}
-                                        style={tw`flex-row items-center justify-center gap-3 p-6 bg-white/5 border border-white/10 rounded-2xl mt-8`}
-                                    >
-                                        <RefreshCcw size={16} color="#ef4444" />
-                                        <Text style={tw`text-[10px] font-black uppercase text-red-500`}>SAIR / MUDAR PERFIL</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </ScrollView>
-                        ) : (
-                            <View style={tw`flex-1 items-center justify-center`}>
-                                <RefreshCcw size={32} color={NEON_YELLOW} style={tw`opacity-20`} />
-                            </View>
-                        )}
-                    </View>
-                </Modal>
-
-                <View style={tw`flex-1 p-6 justify-center gap-6`}>
+            <View style={tw`flex-1 relative`}>
+                {/* 2. CONTEÚDO SCROLLABLE (Pode deslizar, SOS não) */}
+                <ScrollView contentContainerStyle={tw`pb-[300px] pt-4 px-6`} keyboardShouldPersistTaps="handled">
                     <View style={[
-                        tw`flex-row items-center justify-center gap-3 py-2.5 px-6 rounded-full self-center border text-[9px] font-black uppercase tracking-[0.2em] shadow-lg`,
+                        tw`flex-row items-center justify-center gap-3 py-2 px-6 rounded-full self-center border text-[9px] font-black uppercase tracking-[0.2em] shadow-lg mb-4`,
                         location ? tw`bg-green-600/10 border-green-500/30` : tw`bg-[#fbff0010] border-[#fbff0033]`
                     ]}>
-                        <MapPin size={14} color={location ? "#22c55e" : NEON_YELLOW} />
-                        <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, { color: location ? "#22c55e" : NEON_YELLOW }]}>
+                        <MapPin size={12} color={location ? "#22c55e" : NEON_YELLOW} />
+                        <Text style={[tw`text-[8px] font-black uppercase tracking-widest`, { color: location ? "#22c55e" : NEON_YELLOW }]}>
                             {location ? `GPS OPERACIONAL (±${Math.round(gpsAccuracy || 0)}m)` : 'OBTENDO COORDENADAS...'}
                         </Text>
                     </View>
 
                     {gpsDenied && (
-                        <View style={tw`bg-red-600/20 border border-red-600/40 p-3 rounded-xl flex-row items-center justify-center gap-2`}>
-                            <WifiOff size={14} color="#ef4444" />
+                        <View style={tw`bg-red-600/20 border border-red-600/40 p-2 rounded-xl flex-row items-center justify-center gap-2 mb-4`}>
+                            <WifiOff size={12} color="#ef4444" />
                             <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>GPS BLOQUEADO. ATIVE NAS CONFIGURAÇÕES.</Text>
                         </View>
                     )}
 
-                    <SOSButton onClick={handleSOS} loading={sending} />
+                    {/* Espaçador maciço para evitar que os botões abaixo fiquem escondidos permanentemente pelo SOS button fixo */}
+                    <View style={{ marginTop: 260 }} />
 
-                    <View style={tw`flex-row flex-wrap justify-center gap-4`}>
+                    <View style={tw`flex-row flex-wrap justify-center gap-3`}>
                         {[
-                            { type: EmergencyType.POLICE_CIVIL, icon: <Shield size={32} color={selectedType === EmergencyType.POLICE_CIVIL ? "black" : "#64748b"} />, label: 'CIVIL', color: tw`bg-[#fbff00]` },
-                            { type: EmergencyType.POLICE_TRAFFIC, icon: <Car size={32} color={selectedType === EmergencyType.POLICE_TRAFFIC ? "white" : "#64748b"} />, label: 'TRÂNSITO', color: tw`bg-orange-600` },
-                            { type: EmergencyType.DISASTER, icon: <Activity size={32} color={selectedType === EmergencyType.DISASTER ? "white" : "#64748b"} />, label: 'CLIMA', color: tw`bg-teal-600` }
+                            { type: EmergencyType.POLICE_CIVIL, icon: <Shield size={24} color={selectedType === EmergencyType.POLICE_CIVIL ? "black" : "#64748b"} />, label: 'CIVIL', color: tw`bg-[#fbff00]` },
+                            { type: EmergencyType.POLICE_TRAFFIC, icon: <Car size={24} color={selectedType === EmergencyType.POLICE_TRAFFIC ? "white" : "#64748b"} />, label: 'TRÂNSITO', color: tw`bg-orange-600` },
+                            { type: EmergencyType.DISASTER, icon: <Activity size={24} color={selectedType === EmergencyType.DISASTER ? "white" : "#64748b"} />, label: 'CLIMA', color: tw`bg-teal-600` }
                         ].map((item) => (
                             <TouchableOpacity
                                 key={item.label}
                                 onPress={() => setSelectedType(item.type as EmergencyType)}
                                 style={[
-                                    tw`p-5 rounded-3xl items-center gap-3 border-2 transition-all`,
+                                    tw`p-4 rounded-3xl items-center gap-2 border-2 transition-all min-w-[30%]`,
                                     selectedType === item.type ? [item.color, tw`border-white/20 scale-105 shadow-xl`] : tw`bg-[#0d0d10] border-white/5`
                                 ]}
                             >
                                 {item.icon}
-                                <Text style={[tw`text-[9px] font-black uppercase tracking-widest`, selectedType === item.type ? tw`text-white` : tw`text-slate-500`, item.type === EmergencyType.POLICE_CIVIL && selectedType === item.type && tw`text-black`]}>{item.label}</Text>
+                                <Text style={[tw`text-[8px] font-black uppercase tracking-widest mt-1`, selectedType === item.type ? tw`text-white` : tw`text-slate-500`, item.type === EmergencyType.POLICE_CIVIL && selectedType === item.type && tw`text-black`]}>{item.label}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
+                </ScrollView>
+
+                {/* 3. BOTÃO SOS ABSOLUTAMENTE FIXO (Não sofre Resize) */}
+                <View style={[tw`absolute w-full items-center`, { top: sosTargetTop, pointerEvents: 'box-none' }]}>
+                    <SOSButton onClick={handleSOS} loading={sending} />
                 </View>
 
-                <View style={tw`p-6 bg-[#0d0d10] border-t border-white/5`}>
-                    {selectedImages.length > 0 && (
-                        <View style={tw`flex-row gap-4 mb-4`}>
-                            {selectedImages.map((uri, idx) => (
-                                <View key={idx} style={tw`relative`}>
-                                    <Image source={{ uri }} style={tw`w-20 h-20 rounded-xl border border-white/20`} />
-                                    <TouchableOpacity
-                                        onPress={() => removeImage(idx)}
-                                        style={tw`absolute -top-2 -right-2 bg-red-600 rounded-full p-1 border border-black shadow-lg`}
-                                    >
-                                        <X size={12} color="white" />
-                                    </TouchableOpacity>
-                                </View>
-                            ))}
+                {/* 4. INPUT DE DETALHES FIXO NA BASE (Sobe inteligentemente com o teclado sem estressar a grid) */}
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    style={[tw`absolute bottom-0 w-full`]}
+                >
+                    <View style={tw`p-5 bg-[#0d0d10] border-t border-white/5`}>
+                        {selectedImages.length > 0 && (
+                            <View style={tw`flex-row gap-3 mb-3`}>
+                                {selectedImages.map((uri, idx) => (
+                                    <View key={idx} style={tw`relative`}>
+                                        <Image source={{ uri }} style={tw`w-16 h-16 rounded-xl border border-white/20`} transition={150} />
+                                        <TouchableOpacity
+                                            onPress={() => removeImage(idx)}
+                                            style={tw`absolute -top-2 -right-2 bg-red-600 rounded-full p-1 border border-black shadow-lg`}
+                                        >
+                                            <X size={10} color="white" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+                        <View style={tw`flex-row items-center gap-3`}>
+                            <TouchableOpacity
+                                onPress={pickImage}
+                                style={tw`bg-white/5 p-3.5 rounded-3xl border border-white/10`}
+                            >
+                                <Camera size={22} color={selectedImages.length > 0 ? NEON_YELLOW : "#64748b"} />
+                            </TouchableOpacity>
+                            <View style={tw`flex-1 relative flex-row items-center bg-black border border-white/5 rounded-3xl px-5 py-0`}>
+                                <TextInput
+                                    placeholder="DÊ DETALHES OU FOTOS"
+                                    placeholderTextColor="#475569"
+                                    style={tw`flex-1 py-4 text-white text-sm font-bold uppercase`}
+                                    value={description}
+                                    onChangeText={setDescription}
+                                />
+                            </View>
                         </View>
-                    )}
-                    <View style={tw`flex-row items-center gap-3`}>
-                        <TouchableOpacity
-                            onPress={pickImage}
-                            style={tw`bg-white/5 p-4 rounded-3xl border border-white/10`}
-                        >
-                            <Camera size={24} color={selectedImages.length > 0 ? NEON_YELLOW : "#64748b"} />
-                        </TouchableOpacity>
-                        <View style={tw`flex-1 relative flex-row items-center bg-black border border-white/5 rounded-3xl px-6 py-1`}>
-                            <TextInput
-                                placeholder="DÊ DETALHES OU FOTOS"
-                                placeholderTextColor="#475569"
-                                style={tw`flex-1 py-5 text-white text-sm font-bold uppercase`}
-                                value={description}
-                                onChangeText={setDescription}
-                            />
-                        </View>
+                        {uploadingImages && (
+                            <Text style={tw`text-[10px] text-yellow-500 font-bold mt-2 text-center uppercase`}>Enviando fotos...</Text>
+                        )}
                     </View>
-                    {uploadingImages && (
-                        <Text style={tw`text-[10px] text-yellow-500 font-bold mt-2 text-center uppercase`}>Enviando fotos...</Text>
-                    )}
-                </View>
-            </KeyboardAvoidingView>
+                </KeyboardAvoidingView>
+            </View>
         </View>
     );
 };

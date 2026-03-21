@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Image, Platform, AppState } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Platform, AppState } from 'react-native';
+import { Image } from 'expo-image';
 import { Download, Trash2, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, Settings, WifiOff } from 'lucide-react-native';
 import tw from 'twrnc';
 import { Animated } from 'react-native';
 
 import { db } from '../services/firebase';
-import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch, increment } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from '../types';
-import { startAlarm, stopAlarm, unlockAudio, playImmediateBeep } from '../services/alarmService';
+import { audioManager } from '../services/AudioManager';
+import { alarmMonitor } from '../services/AlarmMonitor';
+import { healthCheck } from '../services/HealthCheckSystem';
 import { decryptValue } from '../services/cryptoUtils';
 import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
 import { saveUserSession, getUserSession } from '../services/storage';
@@ -19,6 +22,7 @@ interface PoliceScreenProps {
 }
 
 const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
+    const [currentTime, setCurrentTime] = useState(Date.now());
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [badgeId, setBadgeId] = useState('');
     const [password, setPassword] = useState('');
@@ -129,7 +133,9 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         if (badgeId.trim() === officialId && password === dbPassword) {
             setIsAuthenticated(true);
             setAuthError(false);
-            unlockAudio();
+            // Iniciar Monitoramento Robusto e Health Check
+            alarmMonitor.start();
+            healthCheck.start();
         } else {
             setAuthError(true);
             setPassword('');
@@ -140,15 +146,55 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     const updateAlertStatus = async (id: string, status: AlertStatus) => {
         try {
             const docRef = doc(db, 'emergencias', id);
-            await updateDoc(docRef, { status, dataAtualizacao: Date.now() });
-
-            // SEMPRE fechar o modal após uma ação (conforme solicitado)
-            setSelectedAlert(null);
-
+            
             if (status === AlertStatus.IN_PROGRESS) {
-                stopAlarm();
-                Alert.alert('Despacho Enviado', 'Equipa a caminho. O alerta ficará amarelo para todos os operadores.');
+                // LÓGICA DE DESPACHO MELHORADA
+                audioManager.stopAlarm(id);
+                await updateDoc(docRef, { 
+                    status, 
+                    dataAtualizacao: Date.now(),
+                    timestamp_despacho: Date.now(),
+                    "estado_alarme.tocando": false,
+                    "estado_alarme.despacho_silenciado": true,
+                    "estado_alarme.despacho_timestamp_silencio": Date.now()
+                });
+                
+                // Aguarda 30 minutos em background (setTimeout)
+                const thirtyMinutesInMs = 30 * 60 * 1000;
+                setTimeout(async () => {
+                    const pedidoAtual = await getDoc(docRef);
+                    if (pedidoAtual.exists() && pedidoAtual.data().status === AlertStatus.IN_PROGRESS) {
+                        console.log(`[DESPACHO] Reativando alarme para pedido não resolvido em 30 min: ${id}`);
+                        // Envia notificação supervisor (simulado)
+                        console.warn(`Supervisor notificado sobre pedido ${id} pendente há 30min.`);
+                        
+                        await updateDoc(docRef, {
+                            "estado_alarme.despacho_silenciado": false,
+                            contador_toques: increment(3)
+                        });
+                        
+                        // Reativa via monitor (o monitor cuidará disso no próximo ciclo de 5s)
+                    }
+                }, thirtyMinutesInMs);
+
+                Alert.alert('Despacho Enviado', 'Equipa a caminho. Silêncio de 30 minutos ativado para este pedido.');
+            } else if (status === AlertStatus.RESOLVED) {
+                // LÓGICA DE CONCLUSÃO MELHORADA
+                audioManager.stopAlarm(id);
+                await audioManager.playSuccessSound(1000);
+                
+                await updateDoc(docRef, { 
+                    status, 
+                    dataAtualizacao: Date.now(),
+                    timestamp_conclusao: Date.now(),
+                    "estado_alarme.tocando": false,
+                    "estado_alarme.despacho_silenciado": false
+                });
+                
+                Alert.alert('Sucesso', 'Ocorrência resolvida e arquivada.');
             }
+
+            setSelectedAlert(null);
         } catch (err: any) {
             Alert.alert('Falha na Rede', `Ligue-se à internet para atualizar o alerta.`);
         }
@@ -260,78 +306,19 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
 
     useEffect(() => {
         if (!isAuthenticated) {
-            stopAlarm();
+            audioManager.stopAllAlarms();
+            alarmMonitor.stop();
+            // O HealthCheck pode continuar rodando ou parar conforme preferência
+            // Geralmente, em produção, é bom mantê-lo rodando se o app estiver aberto
             return;
         }
+    }, [isAuthenticated]);
 
-        const now = Date.now();
-
-        // a) Pedidos NOVOS
-        const newAlerts = alerts.filter(a => a.status === AlertStatus.NEW);
-
-        // b) Pedidos STALE (Despacho parado há mais de 30 min)
-        const staleDispatches = alerts.filter(a =>
-            a.status === AlertStatus.IN_PROGRESS &&
-            a.dataAtualizacao &&
-            (now - a.dataAtualizacao > 1800000) // 30 minutos
-        );
-
-        const urgentCount = newAlerts.length + staleDispatches.length;
-
-        // Gatilho imediato se o número de urgências aumentar (Novo SOS ou Novo Stale)
-        if (urgentCount > prevNewAlertsCount.current) {
-            playImmediateBeep();
-        }
-
-        // Gestão do Loop de 60 segundos
-        if (urgentCount > 0) {
-            startAlarm();
-        } else {
-            stopAlarm();
-        }
-
-        prevNewAlertsCount.current = urgentCount;
-    }, [alerts, isAuthenticated]);
-
-    // Verificação contínua para transformar IN_PROGRESS em STALE em tempo real
-    useEffect(() => {
-        if (!isAuthenticated) return;
-        const interval = setInterval(() => {
-            // Apenas forçamos o re-cálculo do useEffect acima
-            // React vai detetar que o tempo mudou e as urgências podem ter mudado
-            const now = Date.now();
-            const hasStale = alerts.some(a =>
-                a.status === AlertStatus.IN_PROGRESS &&
-                a.dataAtualizacao &&
-                (now - a.dataAtualizacao > 1800000)
-            );
-            if (hasStale) startAlarm();
-        }, 30000); // Checar a cada 30 segundos
-        return () => clearInterval(interval);
-    }, [alerts, isAuthenticated]);
-
-    // Verificação de AppState para re-alarme imediato ao voltar para o foco
-    useEffect(() => {
-        const subscription = AppState.addEventListener('change', nextAppState => {
-            if (nextAppState === 'active' && isAuthenticated) {
-                // Ao voltar para o app, se houver urgências, dispara bip imediato
-                const now = Date.now();
-                const urgentCount = alerts.filter(a =>
-                    a.status === AlertStatus.NEW ||
-                    (a.status === AlertStatus.IN_PROGRESS && a.dataAtualizacao && (now - a.dataAtualizacao > 1800000))
-                ).length;
-
-                if (urgentCount > 0) {
-                    playImmediateBeep();
-                }
-            }
-        });
-        return () => subscription.remove();
-    }, [alerts, isAuthenticated]);
-
-    const filteredAlerts = alerts
-        .filter(a => activeTab === 'pending' ? a.status !== AlertStatus.RESOLVED : a.status === AlertStatus.RESOLVED)
-        .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const filteredAlerts = React.useMemo(() => {
+        return alerts
+            .filter(a => activeTab === 'pending' ? a.status !== AlertStatus.RESOLVED : a.status === AlertStatus.RESOLVED)
+            .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    }, [alerts, activeTab]);
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -340,6 +327,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
             });
         }
     }, [isAuthenticated]);
+
 
     if (!isAuthenticated) {
         return (
@@ -533,7 +521,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                                             onPress={() => Linking.openURL(url)}
                                             style={tw`w-[45%] aspect-square rounded-2xl overflow-hidden border border-white/10`}
                                         >
-                                            <Image source={{ uri: url }} style={tw`w-full h-full`} />
+                                            <Image source={{ uri: url }} style={tw`w-full h-full`} transition={200} />
                                         </TouchableOpacity>
                                     ))}
                                 </View>

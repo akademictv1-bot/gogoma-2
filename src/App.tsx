@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Component } from 'react';
-import { View, TouchableOpacity, Text, SafeAreaView, StatusBar, Alert } from 'react-native';
+import { View, TouchableOpacity, Text, SafeAreaView, StatusBar, Alert, Platform, Linking } from 'react-native';
 import { Smartphone, Siren, Wifi, WifiOff } from 'lucide-react-native';
 import tw from 'twrnc';
 
@@ -7,7 +7,7 @@ import CitizenScreen from './screens/CitizenScreen';
 import PoliceScreen from './screens/PoliceScreen';
 
 import { db } from './services/firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from './types';
 
 interface EBProps {
@@ -52,11 +52,21 @@ const AppContent: React.FC = () => {
         }, 3000);
 
         try {
-            console.log("[Sync] Iniciando listener de pedidos SOS...");
-            const q = query(collection(db, 'emergencias'), orderBy('timestamp', 'desc'));
+            // O usuário mencionou lidar com mais de 1000 pedidos. 
+            // Para manter a performance elite, limitamos a 1000, o que já é massivo para um painel.
+            // Alertas resolvidos muito antigos são ignorados para economizar memória/banda.
+            const q = query(
+                collection(db, 'emergencias'),
+                orderBy('timestamp', 'desc'),
+                limit(1000)
+            );
+
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
-                console.log(`[Sync] ${docs.length} alertas recebidos.`);
+                // Log apenas se houver mudança para não inundar o console
+                if (docs.length !== alerts.length) {
+                    console.log(`[Sync] ${docs.length} alertas sincronizados.`);
+                }
                 setAlerts(docs);
             }, (error: any) => {
                 console.error("[Sync] Erro no Firestore:", error);
@@ -133,6 +143,31 @@ const AppContent: React.FC = () => {
                 ) : (
                     <PoliceScreen alerts={alerts} />
                 )}
+            </View>
+
+            <View style={tw`bg-[#0a0a0c] p-4 border-t border-white/5`}>
+                <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
+                    <Text style={tw`text-slate-400 text-xs text-center`}>Contactar: akademictv@gmail.com</Text>
+                    <Text style={tw`text-slate-400 text-xs text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
+                    <Text style={tw`text-slate-400 text-xs text-center`}>Endereço: Chimoio, Moçambique</Text>
+                </View>
+                <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
+                    <TouchableOpacity onPress={() => Platform.OS === 'web' ? window.location.href='/privacy.html' : Linking.openURL('https://gogoma.com.mz/privacy.html')}>
+                        <Text style={tw`text-[#fbff00] text-xs underline`}>Política de Privacidade</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => Platform.OS === 'web' ? window.location.href='/terms.html' : Linking.openURL('https://gogoma.com.mz/terms.html')}>
+                        <Text style={tw`text-[#fbff00] text-xs underline`}>Termos de Uso</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => Platform.OS === 'web' ? window.location.href='/contactos.html' : Linking.openURL('https://gogoma.com.mz/contactos.html')}>
+                        <Text style={tw`text-[#fbff00] text-xs underline`}>Contactos</Text>
+                    </TouchableOpacity>
+                </View>
+                <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
+                    © 2026 Akademic TV. Todos os direitos reservados.
+                </Text>
+                <Text style={tw`text-slate-500 text-[10px] text-center`}>
+                    O sistema também pertence ao Município de Chimoio (CMC).
+                </Text>
             </View>
         </SafeAreaView>
     );

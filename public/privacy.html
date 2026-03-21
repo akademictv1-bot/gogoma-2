@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de Privacidade - Gogoma</title>
+    <style>
+        :root {
+            --primary: #1e3c72;
+            --accent: #1e3c72;
+            --bg: #FFFFFF;
+            --surface: #f8fafc;
+            --text: #333333;
+            --text-dim: #4b5563;
+        }
+        body { 
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 14pt;
+            line-height: 1.6; 
+            color: var(--text); 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 40px 2cm; 
+            background-color: var(--bg); 
+        }
+        @media print {
+            body { padding: 0; background-color: #FFF; color: #000; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+        h1 { 
+            color: var(--primary); 
+            font-size: 2.5rem; 
+            font-weight: bold; 
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+        }
+        .last-updated {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 3rem;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+        h2 { 
+            color: var(--primary); 
+            margin-top: 3rem; 
+            font-size: 1.3rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        p, li { 
+            margin-bottom: 1rem; 
+            color: var(--text);
+        }
+        strong {
+            color: var(--text);
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 2rem 0;
+            background: var(--surface);
+            border: 1px solid #cbd5e1;
+        }
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #cbd5e1;
+            border-right: 1px solid #cbd5e1;
+        }
+        th {
+            background: #e2e8f0;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: var(--text);
+        }
+        .check { color: #16a34a; font-weight: bold; }
+        .cross { color: #dc2626; font-weight: bold; }
+        
+        .footer { 
+            margin-top: 4rem; 
+            font-size: 0.9rem; 
+            color: var(--text-dim); 
+            text-align: center; 
+            border-top: 1px solid #e2e8f0; 
+            padding-top: 2rem; 
+            padding-bottom: 2rem;
+            line-height: 1.6;
+        }
+        .footer a {
+            color: var(--primary);
+            margin: 0 10px;
+            text-decoration: underline;
+        }
+        .contact-box { 
+            background: var(--surface); 
+            padding: 2rem; 
+            border-radius: 8px; 
+            border: 1px solid #cbd5e1; 
+            margin-top: 2rem; 
+        }
+        a { color: var(--primary); text-decoration: underline; font-weight: bold; }
+        a:hover { color: #1e40af; }
+        
+        ul { padding-left: 0; list-style-type: none; }
+        ul li { position: relative; padding-left: 1.5rem; }
+        ul li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: bold;
+        }
+        .bullet-list li::before {
+            content: "•";
+            font-size: 1.5rem;
+            top: -0.2rem;
+            color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <h1>Privacidade</h1>
+    <div class="last-updated">Última atualização: 15 de março de 2026</div>
+
+    <h2>01. Introdução</h2>
+    <p>Bem-vindo ao <strong>Gogoma</strong>. A privacidade e a proteção dos seus dados são de extrema importância para nós. Esta Política de Privacidade descreve como recolhemos, utilizamos, protegemos e processamos as suas informações quando utiliza a nossa plataforma de assistência de emergência em Moçambique.</p>
+
+    <h2>02. Sobre o Gogoma</h2>
+    <p>O Gogoma é uma plataforma móvel e web concebida para facilitar o pedido de socorro em situações de perigo, urgência ou emergência em Moçambique. O sistema conecta cidadãos em risco às equipas de resposta rápida da <strong>Polícia da República de Moçambique (PRM)</strong>, permitindo uma intervenção rápida e coordenada.</p>
+
+    <h2>03. Dados Recolhidos</h2>
+    <p>Seguimos o princípio de minimização de dados. Recolhemos apenas o estritamente necessário para salvaguardar a vida:</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Tipo de Dado</th>
+                <th>Descrição</th>
+                <th>Obrigatório?</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Número de Telemóvel</strong></td>
+                <td>Número moçambicano (82-87) para contacto das autoridades</td>
+                <td><span class="check">SIM ✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>Localização GPS</strong></td>
+                <td>Coordenadas capturadas no momento do pedido SOS</td>
+                <td><span class="check">SIM ✓</span></td>
+            </tr>
+            <tr>
+                <td><strong>Evidências Visuais</strong></td>
+                <td>Fotografias opcionais como prova da ocorrência</td>
+                <td><span class="cross">NÃO ✗</span></td>
+            </tr>
+            <tr>
+                <td><strong>Nome do Utilizador</strong></td>
+                <td>Identificação básica perante os socorristas</td>
+                <td><span class="cross">NÃO ✗</span></td>
+            </tr>
+            <tr>
+                <td><strong>Histórico</strong></td>
+                <td>Registo de ocorrências anteriores para contexto</td>
+                <td><span class="check">SIM ✓</span></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>04. Finalidade dos Dados</h2>
+    <p>O número de telemóvel é o identificador principal. Sem ele, os socorristas não conseguem estabelecer comunicação direta, o que é crítico em situações de risco. A localização GPS permite que as equipas localizem o utilizador com precisão técnica.</p>
+
+    <h2>05. Utilização da Informação</h2>
+    <ul>
+        <li>Identificar a origem do pedido de socorro</li>
+        <li>Coordenar o despacho de unidades de emergência</li>
+        <li>Comunicar com o utilizador durante a ocorrência</li>
+        <li>Manter histórico de segurança e auditoria</li>
+        <li>Gerar relatórios estatísticos anónimos</li>
+    </ul>
+
+    <h2>06. Segurança e Criptografia</h2>
+    <p>O GOGOMA usa encriptação AES-256 para todas as credenciais. Levamos a segurança e a integridade dos dados dos nossos cidadãos extremamente a sério, implementando proteções de nível empresarial em todos os aspetos do sistema:</p>
+    <ul class="bullet-list">
+        <li><strong>Acesso Restrito:</strong> Apenas operadores PRM autenticados acedem aos dados</li>
+        <li><strong>Servidor Seguro:</strong> Dados armazenados numa plataforma segura com proteção enterprise</li>
+        <li><strong>Certificação SSL/HTTPS:</strong> Dados em trânsito sempre cifrados para acesso Web e Mobile</li>
+        <li><strong>Auditorias:</strong> Auditorias de segurança regulares conduzidas pela equipa técnica</li>
+    </ul>
+
+    <h2>07. Retenção e Eliminação</h2>
+    <p>Os dados são mantidos pelo período necessário para cumprir obrigações legais de segurança Pública. Após a resolução e auditoria, os dados são eliminados ou anonimizados permanentemente (máximo 3 anos).</p>
+
+    <h2>08. Partilha de Dados</h2>
+    <p>Os seus dados <strong>não são vendidos ou partilhados</strong> com empresas privadas. O acesso é exclusivo ao Comando PRM e autoridades judiciais mediante requisição legal.</p>
+
+    <h2>09. Seus Direitos</h2>
+    <p>De acordo com normas internacionais (GDPR/LGPD), tem direito ao acesso, retificação e eliminação dos seus dados. Para exercer estes direitos, utilize os canais de contacto abaixo.</p>
+
+    <h2>10. Contacte o Responsável de Dados</h2>
+    <div class="contact-box">
+        <ul class="bullet-list">
+            <li><strong>Organização:</strong> Akademic TV</li>
+            <li><strong>Nome:</strong> Wilady Manuel Joaquim / Akademic TV</li>
+            <li><strong>Email:</strong> <a href="mailto:akademictv@gmail.com">akademictv@gmail.com</a></li>
+            <li><strong>Telefone Primário:</strong> +258 82 148 1573 (Wilady Manuel Joaquim)</li>
+            <li><strong>Telefone Secundário:</strong> +258 87 464 4289 (José Horácio)</li>
+            <li><strong>Localização:</strong> Chimoio, Moçambique</li>
+            <li><strong>Horário:</strong> Segunda a Sexta, 8h - 17h</li>
+        </ul>
+    </div>
+
+    <h2>11. Reportar Vulnerabilidade</h2>
+    <p>A segurança é um esforço contínuo. Encorajamos os nossos utilizadores a reportarem proativamente quaisquer potenciais vulnerabilidades. Envie um email direto para <a href="mailto:akademictv@gmail.com?subject=SEGURANÇA">akademictv@gmail.com</a> com o assunto "<strong>SEGURANÇA</strong>".</p>
+
+    <div class="footer">
+        <strong>Contactos Oficiais:</strong><br><br>
+        Email: <a href="mailto:akademictv@gmail.com">akademictv@gmail.com</a><br>
+        Telefones: <a href="tel:+258821481573">+258 82 148 1573</a> | <a href="tel:+258874644289">+258 87 464 4289</a><br>
+        Endereço: Chimoio, Moçambique<br><br>
+        
+        © 2026 Akademic TV. Todos os direitos reservados.<br>
+        O sistema também pertence ao Município de Chimoio (CMC).
+    </div>
+</body>
+</html>

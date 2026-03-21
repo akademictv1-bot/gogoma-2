@@ -28,10 +28,9 @@ export const getCurrentLocation = async () => {
         // Ignora erro no cache e segue para busca real
     }
 
-    // 2. Busca Real com TIMEOUT de 15 segundos para não travar celulares fracos
-    // Usamos Balanced para ser mais rápido que Highest mas ainda preciso o suficiente
+    // 2. Busca Real usando Highest para forçar o chip GPS nativo (funciona offline)
     const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.Highest,
     });
 
     return {
@@ -60,5 +59,26 @@ export const watchLocation = async (callback: (loc: any) => void) => {
             });
         }
     );
+};
+
+export const getAddressFromCoords = async (lat: number, lng: number) => {
+    try {
+        const [address] = await Location.reverseGeocodeAsync({
+            latitude: lat,
+            longitude: lng,
+        });
+
+        if (address) {
+            const street = address.street || '';
+            const district = address.district || address.subregion || '';
+            const city = address.city || '';
+            const formatted = [street, district, city].filter(Boolean).join(', ');
+            return formatted || 'Endereço não identificado';
+        }
+        return 'Endereço não identificado';
+    } catch (error) {
+        console.error("Erro ao obter endereço:", error);
+        return 'Falha ao obter endereço';
+    }
 };
 

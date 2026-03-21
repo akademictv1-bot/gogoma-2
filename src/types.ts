@@ -29,7 +29,7 @@ export interface EmergencyAlert {
     id: string;
     type: EmergencyType;
     location: GeoLocation;
-    timestamp: number;
+    timestamp: number; // timestamp_criacao
     status: AlertStatus;
     description?: string;
     contactNumber: string;
@@ -42,4 +42,16 @@ export interface EmergencyAlert {
     dataAtualizacao?: number;
     isLowAccuracy?: boolean;
     images?: string[];
+    
+    // Novos campos para Controle de Alarme Robusto
+    timestamp_despacho?: number;
+    timestamp_conclusao?: number;
+    timestamp_ultimo_alarme?: number;
+    contador_toques?: number;
+    estado_alarme?: {
+        tocando: boolean;
+        despacho_silenciado: boolean;
+        despacho_timestamp_silencio: number | null;
+        alarmes_completados: number;
+    };
 }
