@@ -334,13 +334,13 @@ const CitizenScreen: React.FC = () => {
                     despacho_silenciado: false,
                     despacho_timestamp_silencio: null,
                     alarmes_completados: 0
-                }
+                } // IMPORTANTE: O Alarme toca sempre no primeiro pedido!
             });
 
             // 2. Transição visual imediata para sucesso
             setStep(2);
 
-            // 3. Notificação (sem bloquear)
+            // 3. Notificação Push SEMPRE disparada para pedidos novos
             sendPushNotification(
                 `🚑 SOS: ${selectedType || 'Emergência'}`,
                 `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!`
@@ -414,6 +414,35 @@ const CitizenScreen: React.FC = () => {
         Linking.openURL(`tel:${num}`);
     };
 
+    const handleLogout = async () => {
+        if (Platform.OS === 'web') {
+            if (window.confirm("Tem a certeza que deseja sair da conta?")) {
+                await clearUserSession('gogoma_user_profile');
+                setProfile(null);
+                setIsRegistered(false);
+                setShowHelp(false);
+            }
+        } else {
+            Alert.alert(
+                "Sair da Conta",
+                "Tem a certeza que deseja sair?",
+                [
+                    { text: "Cancelar", style: "cancel" },
+                    { 
+                        text: "Sair", 
+                        style: "destructive", 
+                        onPress: async () => {
+                            await clearUserSession('gogoma_user_profile');
+                            setProfile(null);
+                            setIsRegistered(false);
+                            setShowHelp(false);
+                        } 
+                    }
+                ]
+            );
+        }
+    };
+
     if (!isRegistered) {
         return (
             <ScrollView contentContainerStyle={tw`flex-grow bg-[#050507] p-6`} keyboardShouldPersistTaps="handled">
@@ -447,6 +476,33 @@ const CitizenScreen: React.FC = () => {
                     }}
                 />
 
+                {Platform.OS === 'web' && (
+                    <View style={tw`mt-8 pt-4 border-t border-white/5`}>
+                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
+                            <Text style={tw`text-slate-400 text-xs text-center`}>Contactar: akademictv@gmail.com</Text>
+                            <Text style={tw`text-slate-400 text-xs text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
+                            <Text style={tw`text-slate-400 text-xs text-center`}>Endereço: Chimoio, Moçambique</Text>
+                        </View>
+                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
+                            <TouchableOpacity onPress={() => window.location.href='/privacy.html'}>
+                                <Text style={tw`text-[#fbff00] text-xs underline`}>Política de Privacidade</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => window.location.href='/terms.html'}>
+                                <Text style={tw`text-[#fbff00] text-xs underline`}>Termos de Uso</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => window.location.href='/contactos.html'}>
+                                <Text style={tw`text-[#fbff00] text-xs underline`}>Contactos</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
+                            © 2026 Akademic TV. Todos os direitos reservados.
+                        </Text>
+                        <Text style={tw`text-slate-500 text-[10px] text-center`}>
+                            O sistema também pertence ao Município de Chimoio (CMC).
+                        </Text>
+                    </View>
+                )}
+
             </ScrollView>
         );
     }
@@ -467,10 +523,6 @@ const CitizenScreen: React.FC = () => {
         );
     }
 
-    const screenHeight = Dimensions.get('screen').height;
-    // Posição base do botão SOS, ignorando mudanças da view do Android
-    const sosTargetTop = Math.max(0, (screenHeight * 0.45) - 140); 
-
     return (
         <View style={tw`flex-1 bg-black`}>
             <Header
@@ -480,99 +532,137 @@ const CitizenScreen: React.FC = () => {
                 actionIcon={<Info size={18} color={NEON_YELLOW} />}
             />
 
-            <View style={tw`flex-1 relative`}>
-                {/* 2. CONTEÚDO SCROLLABLE (Pode deslizar, SOS não) */}
-                <ScrollView contentContainerStyle={tw`pb-[300px] pt-4 px-6`} keyboardShouldPersistTaps="handled">
-                    <View style={[
-                        tw`flex-row items-center justify-center gap-3 py-2 px-6 rounded-full self-center border text-[9px] font-black uppercase tracking-[0.2em] shadow-lg mb-4`,
-                        location ? tw`bg-green-600/10 border-green-500/30` : tw`bg-[#fbff0010] border-[#fbff0033]`
-                    ]}>
-                        <MapPin size={12} color={location ? "#22c55e" : NEON_YELLOW} />
-                        <Text style={[tw`text-[8px] font-black uppercase tracking-widest`, { color: location ? "#22c55e" : NEON_YELLOW }]}>
-                            {location ? `GPS OPERACIONAL (±${Math.round(gpsAccuracy || 0)}m)` : 'OBTENDO COORDENADAS...'}
-                        </Text>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={tw`flex-1`}
+            >
+                <ScrollView 
+                    contentContainerStyle={tw`flex-grow justify-between pb-6`} 
+                    keyboardShouldPersistTaps="handled" 
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* TOPO: GPS Badge */}
+                    <View style={tw`pt-6 px-6 items-center`}>
+                        <View style={[
+                            tw`flex-row items-center justify-center gap-3 py-2 px-6 rounded-full border shadow-lg mb-2`,
+                            location ? tw`bg-green-600/10 border-green-500/30` : tw`bg-[#fbff0010] border-[#fbff0033]`
+                        ]}>
+                            <MapPin size={12} color={location ? "#22c55e" : NEON_YELLOW} />
+                            <Text style={[tw`text-[8px] font-black uppercase tracking-widest`, { color: location ? "#22c55e" : NEON_YELLOW }]}>
+                                {location ? `GPS OPERACIONAL (±${Math.round(gpsAccuracy || 0)}m)` : 'OBTENDO COORDENADAS...'}
+                            </Text>
+                        </View>
+
+                        {gpsDenied && (
+                            <View style={tw`bg-red-600/20 border border-red-600/40 p-2 rounded-xl flex-row items-center justify-center gap-2`}>
+                                <WifiOff size={12} color="#ef4444" />
+                                <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>GPS BLOQUEADO. ATIVE NAS CONFIGURAÇÕES.</Text>
+                            </View>
+                        )}
                     </View>
 
-                    {gpsDenied && (
-                        <View style={tw`bg-red-600/20 border border-red-600/40 p-2 rounded-xl flex-row items-center justify-center gap-2 mb-4`}>
-                            <WifiOff size={12} color="#ef4444" />
-                            <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>GPS BLOQUEADO. ATIVE NAS CONFIGURAÇÕES.</Text>
+                    {/* CENTRO: SOS Button e Categorias */}
+                    <View style={tw`flex-1 items-center justify-center px-4 py-8`}> 
+                        <SOSButton onClick={handleSOS} loading={sending} />
+                        
+                        <View style={tw`flex-row flex-wrap justify-center gap-3 mt-8 w-full`}>
+                            {[
+                                { type: EmergencyType.POLICE_CIVIL, icon: <Shield size={24} color={selectedType === EmergencyType.POLICE_CIVIL ? "black" : "#64748b"} />, label: 'CIVIL', color: tw`bg-[#fbff00]` },
+                                { type: EmergencyType.POLICE_TRAFFIC, icon: <Car size={24} color={selectedType === EmergencyType.POLICE_TRAFFIC ? "white" : "#64748b"} />, label: 'TRÂNSITO', color: tw`bg-orange-600` },
+                                { type: EmergencyType.DISASTER, icon: <Activity size={24} color={selectedType === EmergencyType.DISASTER ? "white" : "#64748b"} />, label: 'CLIMA', color: tw`bg-teal-600` }
+                            ].map((item) => (
+                                <TouchableOpacity
+                                    key={item.label}
+                                    onPress={() => setSelectedType(item.type as EmergencyType)}
+                                    style={[
+                                        tw`p-4 rounded-3xl items-center gap-2 border-2 transition-all min-w-[30%]`,
+                                        selectedType === item.type ? [item.color, tw`border-white/20 scale-105 shadow-xl`] : tw`bg-[#0d0d10] border-white/5`
+                                    ]}
+                                >
+                                    {item.icon}
+                                    <Text style={[tw`text-[8px] font-black uppercase tracking-widest mt-1`, selectedType === item.type ? tw`text-white` : tw`text-slate-500`, item.type === EmergencyType.POLICE_CIVIL && selectedType === item.type && tw`text-black`]}>{item.label}</Text>
+                                </TouchableOpacity>
+                            ))}
                         </View>
-                    )}
+                    </View>
 
-                    {/* Espaçador maciço para evitar que os botões abaixo fiquem escondidos permanentemente pelo SOS button fixo */}
-                    <View style={{ marginTop: 260 }} />
-
-                    <View style={tw`flex-row flex-wrap justify-center gap-3`}>
-                        {[
-                            { type: EmergencyType.POLICE_CIVIL, icon: <Shield size={24} color={selectedType === EmergencyType.POLICE_CIVIL ? "black" : "#64748b"} />, label: 'CIVIL', color: tw`bg-[#fbff00]` },
-                            { type: EmergencyType.POLICE_TRAFFIC, icon: <Car size={24} color={selectedType === EmergencyType.POLICE_TRAFFIC ? "white" : "#64748b"} />, label: 'TRÂNSITO', color: tw`bg-orange-600` },
-                            { type: EmergencyType.DISASTER, icon: <Activity size={24} color={selectedType === EmergencyType.DISASTER ? "white" : "#64748b"} />, label: 'CLIMA', color: tw`bg-teal-600` }
-                        ].map((item) => (
-                            <TouchableOpacity
-                                key={item.label}
-                                onPress={() => setSelectedType(item.type as EmergencyType)}
-                                style={[
-                                    tw`p-4 rounded-3xl items-center gap-2 border-2 transition-all min-w-[30%]`,
-                                    selectedType === item.type ? [item.color, tw`border-white/20 scale-105 shadow-xl`] : tw`bg-[#0d0d10] border-white/5`
-                                ]}
-                            >
-                                {item.icon}
-                                <Text style={[tw`text-[8px] font-black uppercase tracking-widest mt-1`, selectedType === item.type ? tw`text-white` : tw`text-slate-500`, item.type === EmergencyType.POLICE_CIVIL && selectedType === item.type && tw`text-black`]}>{item.label}</Text>
-                            </TouchableOpacity>
-                        ))}
+                    {/* BASE: Detalhes e Fotos */}
+                    <View style={tw`px-4 w-full`}>
+                        <View style={tw`p-5 bg-[#0d0d10] border border-white/10 rounded-3xl`}>
+                            {selectedImages.length > 0 && (
+                                <View style={tw`flex-row gap-3 mb-3`}>
+                                    {selectedImages.map((uri, idx) => (
+                                        <View key={idx} style={tw`relative`}>
+                                            <Image source={{ uri }} style={tw`w-14 h-14 rounded-xl border border-white/20`} transition={150} />
+                                            <TouchableOpacity
+                                                onPress={() => removeImage(idx)}
+                                                style={tw`absolute -top-2 -right-2 bg-red-600 rounded-full p-1 border border-black shadow-lg`}
+                                            >
+                                                <X size={10} color="white" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                </View>
+                            )}
+                            <View style={tw`flex-row items-center gap-3`}>
+                                <TouchableOpacity
+                                    onPress={pickImage}
+                                    style={tw`bg-white/5 p-3.5 rounded-2xl border border-white/10`}
+                                >
+                                    <Camera size={22} color={selectedImages.length > 0 ? NEON_YELLOW : "#64748b"} />
+                                </TouchableOpacity>
+                                <View style={tw`flex-1 relative flex-row items-center bg-black border border-white/5 rounded-2xl px-5 py-0`}>
+                                    <TextInput
+                                        placeholder="DÊ DETALHES OU FOTOS"
+                                        placeholderTextColor="#475569"
+                                        style={tw`flex-1 py-4 text-white text-xs font-bold uppercase`}
+                                        value={description}
+                                        onChangeText={setDescription}
+                                    />
+                                </View>
+                            </View>
+                            {uploadingImages && (
+                                <Text style={tw`text-[10px] text-yellow-500 font-bold mt-2 text-center uppercase`}>Enviando fotos...</Text>
+                            )}
+                        </View>
                     </View>
                 </ScrollView>
+            </KeyboardAvoidingView>
 
-                {/* 3. BOTÃO SOS ABSOLUTAMENTE FIXO (Não sofre Resize) */}
-                <View style={[tw`absolute w-full items-center`, { top: sosTargetTop, pointerEvents: 'box-none' }]}>
-                    <SOSButton onClick={handleSOS} loading={sending} />
-                </View>
-
-                {/* 4. INPUT DE DETALHES FIXO NA BASE (Sobe inteligentemente com o teclado sem estressar a grid) */}
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    style={[tw`absolute bottom-0 w-full`]}
-                >
-                    <View style={tw`p-5 bg-[#0d0d10] border-t border-white/5`}>
-                        {selectedImages.length > 0 && (
-                            <View style={tw`flex-row gap-3 mb-3`}>
-                                {selectedImages.map((uri, idx) => (
-                                    <View key={idx} style={tw`relative`}>
-                                        <Image source={{ uri }} style={tw`w-16 h-16 rounded-xl border border-white/20`} transition={150} />
-                                        <TouchableOpacity
-                                            onPress={() => removeImage(idx)}
-                                            style={tw`absolute -top-2 -right-2 bg-red-600 rounded-full p-1 border border-black shadow-lg`}
-                                        >
-                                            <X size={10} color="white" />
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-                        <View style={tw`flex-row items-center gap-3`}>
-                            <TouchableOpacity
-                                onPress={pickImage}
-                                style={tw`bg-white/5 p-3.5 rounded-3xl border border-white/10`}
-                            >
-                                <Camera size={22} color={selectedImages.length > 0 ? NEON_YELLOW : "#64748b"} />
+                {/* Modal de Ajuda / Opções */}
+                <Modal visible={showHelp} transparent animationType="fade">
+                    <View style={tw`flex-1 bg-black/80 items-center justify-center p-6`}>
+                        <View style={tw`w-full max-w-sm bg-[#0d0d10] p-8 rounded-[32px] border border-white/10 shadow-2xl relative`}>
+                            <TouchableOpacity onPress={() => setShowHelp(false)} style={tw`absolute top-6 right-6 p-2 bg-white/5 rounded-full z-10`}>
+                                <X size={20} color="#64748b" />
                             </TouchableOpacity>
-                            <View style={tw`flex-1 relative flex-row items-center bg-black border border-white/5 rounded-3xl px-5 py-0`}>
-                                <TextInput
-                                    placeholder="DÊ DETALHES OU FOTOS"
-                                    placeholderTextColor="#475569"
-                                    style={tw`flex-1 py-4 text-white text-sm font-bold uppercase`}
-                                    value={description}
-                                    onChangeText={setDescription}
-                                />
+
+                            <View style={tw`items-center mb-8`}>
+                                <View style={tw`w-16 h-16 bg-[#fbff0020] rounded-full items-center justify-center mb-4 border border-[#fbff0040]`}>
+                                    <Info size={28} color={NEON_YELLOW} />
+                                </View>
+                                <Text style={tw`text-xl font-black uppercase text-white tracking-widest text-center`}>AJUDA / OPÇÕES</Text>
+                            </View>
+
+                            <View style={tw`bg-[#121216] p-6 rounded-2xl border border-white/5 mb-6`}>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/40 mb-2 text-center`}>Mensagem do Comando</Text>
+                                <Text style={tw`text-sm font-bold text-white text-center leading-relaxed`}>{helpText}</Text>
+                            </View>
+
+                            <View style={tw`gap-4`}>
+                                <TouchableOpacity onPress={() => makeCall(helpPhone)} style={tw`w-full py-4 bg-green-600 rounded-2xl items-center flex-row justify-center gap-3 shadow-xl`}>
+                                    <Phone size={18} color="white" />
+                                    <Text style={tw`text-white font-black uppercase text-xs tracking-widest`}>LIGAR: {helpPhone}</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity onPress={handleLogout} style={tw`w-full py-4 bg-red-600/10 border border-red-500/30 rounded-2xl items-center flex-row justify-center gap-3`}>
+                                    <AlertTriangle size={18} color="#ef4444" />
+                                    <Text style={tw`text-red-500 font-black uppercase text-xs tracking-widest`}>SAIR DA CONTA</Text>
+                                </TouchableOpacity>
                             </View>
                         </View>
-                        {uploadingImages && (
-                            <Text style={tw`text-[10px] text-yellow-500 font-bold mt-2 text-center uppercase`}>Enviando fotos...</Text>
-                        )}
                     </View>
-                </KeyboardAvoidingView>
-            </View>
+                </Modal>
         </View>
     );
 };

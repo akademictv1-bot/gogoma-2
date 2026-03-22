@@ -53,5 +53,6 @@ export interface EmergencyAlert {
         despacho_silenciado: boolean;
         despacho_timestamp_silencio: number | null;
         alarmes_completados: number;
+        skip_sound_rule?: boolean;
     };
 }

@@ -116,6 +116,13 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     // Carregar e Desencriptar Credenciais do Firestore
     useEffect(() => {
         fetchCreds();
+        
+        // Timer de Atualização da UI (para tempos relativos ex: "2 min atrás")
+        const timer = setInterval(() => {
+            setCurrentTime(Date.now());
+        }, 30000); // 30s é suficiente e economiza bateria
+        
+        return () => clearInterval(timer);
     }, []);
 
     const handleLogin = () => {
@@ -133,6 +140,10 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         if (badgeId.trim() === officialId && password === dbPassword) {
             setIsAuthenticated(true);
             setAuthError(false);
+            
+            // ATIVAÇÃO DE ÁUDIO NO PRIMEIRO CLIQUE (ESSENCIAL PARA NAVEGADORES)
+            audioManager.resumeContext().catch(e => console.error("Erro ao iniciar áudio:", e));
+
             // Iniciar Monitoramento Robusto e Health Check
             alarmMonitor.start();
             healthCheck.start();
@@ -144,12 +155,18 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     };
 
     const updateAlertStatus = async (id: string, status: AlertStatus) => {
+        // OTIMISMO DE ELITE: Fecha o modal IMEDIATAMENTE antes mesmo da rede responder
+        // Isso garante que o operador sinta a interface "instantânea"
+        setSelectedAlert(null);
+        if (status === AlertStatus.RESOLVED) {
+            setActiveTab('resolved');
+        }
+
         try {
             const docRef = doc(db, 'emergencias', id);
+            audioManager.stopAlarm(id);
             
             if (status === AlertStatus.IN_PROGRESS) {
-                // LÓGICA DE DESPACHO MELHORADA
-                audioManager.stopAlarm(id);
                 await updateDoc(docRef, { 
                     status, 
                     dataAtualizacao: Date.now(),
@@ -159,30 +176,16 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                     "estado_alarme.despacho_timestamp_silencio": Date.now()
                 });
                 
-                // Aguarda 30 minutos em background (setTimeout)
+                // Agendamento de reativação (background)
                 const thirtyMinutesInMs = 30 * 60 * 1000;
                 setTimeout(async () => {
-                    const pedidoAtual = await getDoc(docRef);
-                    if (pedidoAtual.exists() && pedidoAtual.data().status === AlertStatus.IN_PROGRESS) {
-                        console.log(`[DESPACHO] Reativando alarme para pedido não resolvido em 30 min: ${id}`);
-                        // Envia notificação supervisor (simulado)
-                        console.warn(`Supervisor notificado sobre pedido ${id} pendente há 30min.`);
-                        
-                        await updateDoc(docRef, {
-                            "estado_alarme.despacho_silenciado": false,
-                            contador_toques: increment(3)
-                        });
-                        
-                        // Reativa via monitor (o monitor cuidará disso no próximo ciclo de 5s)
+                    const snap = await getDoc(docRef);
+                    if (snap.exists() && snap.data().status === AlertStatus.IN_PROGRESS) {
+                        await updateDoc(docRef, { "estado_alarme.despacho_silenciado": false, contador_toques: increment(3) });
                     }
                 }, thirtyMinutesInMs);
 
-                Alert.alert('Despacho Enviado', 'Equipa a caminho. Silêncio de 30 minutos ativado para este pedido.');
             } else if (status === AlertStatus.RESOLVED) {
-                // LÓGICA DE CONCLUSÃO MELHORADA
-                audioManager.stopAlarm(id);
-                await audioManager.playSuccessSound(1000);
-                
                 await updateDoc(docRef, { 
                     status, 
                     dataAtualizacao: Date.now(),
@@ -190,13 +193,11 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                     "estado_alarme.tocando": false,
                     "estado_alarme.despacho_silenciado": false
                 });
-                
-                Alert.alert('Sucesso', 'Ocorrência resolvida e arquivada.');
             }
-
-            setSelectedAlert(null);
         } catch (err: any) {
-            Alert.alert('Falha na Rede', `Ligue-se à internet para atualizar o alerta.`);
+            // Rollback visual discreto ou apenas aviso de erro
+            console.error("Erro ao atualizar status:", err);
+            Alert.alert('Erro de Ligação', `O pedido ${id} não pôde ser atualizado. Tente novamente.`);
         }
     };
 
@@ -320,6 +321,27 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }, [alerts, activeTab]);
 
+    // SINCRONIZAÇÃO DE ELITE: Atualiza o modal aberto ou FECHA conforme o estado
+    useEffect(() => {
+        if (selectedAlert) {
+            const updated = alerts.find(a => a.id === selectedAlert.id);
+            if (updated) {
+                // Se foi RESOLVIDO ou DESPACHADO, fecha o modal automaticamente (Fluxo de Trabalho Limpo)
+                if (updated.status === AlertStatus.RESOLVED || updated.status === AlertStatus.IN_PROGRESS) {
+                    setSelectedAlert(null);
+                    return;
+                }
+
+                if (JSON.stringify(updated) !== JSON.stringify(selectedAlert)) {
+                    setSelectedAlert(updated);
+                }
+            } else {
+                // Foi apagado do banco
+                setSelectedAlert(null);
+            }
+        }
+    }, [alerts]);
+
     useEffect(() => {
         if (isAuthenticated) {
             registerForPushNotificationsAsync().then(token => {
@@ -376,6 +398,33 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                         )}
                     </View>
                 </View>
+
+                {Platform.OS === 'web' && (
+                    <View style={tw`absolute bottom-0 w-full p-4 border-t border-white/5 bg-[#0a0a0c]`}>
+                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
+                            <Text style={tw`text-slate-400 text-xs text-center`}>Contactar: akademictv@gmail.com</Text>
+                            <Text style={tw`text-slate-400 text-xs text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
+                            <Text style={tw`text-slate-400 text-xs text-center`}>Endereço: Chimoio, Moçambique</Text>
+                        </View>
+                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
+                            <TouchableOpacity onPress={() => window.location.href='/privacy.html'}>
+                                <Text style={tw`text-[#fbff00] text-xs underline`}>Política de Privacidade</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => window.location.href='/terms.html'}>
+                                <Text style={tw`text-[#fbff00] text-xs underline`}>Termos de Uso</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => window.location.href='/contactos.html'}>
+                                <Text style={tw`text-[#fbff00] text-xs underline`}>Contactos</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
+                            © 2026 Akademic TV. Todos os direitos reservados.
+                        </Text>
+                        <Text style={tw`text-slate-500 text-[10px] text-center`}>
+                            O sistema também pertence ao Município de Chimoio (CMC).
+                        </Text>
+                    </View>
+                )}
             </View>
         );
     }
@@ -387,6 +436,20 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                 subtitle="SISTEMA GOGOMA"
                 actionIcon={
                     <View style={tw`flex-row items-center gap-2`}>
+                        {/* Indicador de Status Profissional */}
+                        <View style={tw`flex-row items-center gap-1.5 px-2 py-1 bg-black/40 rounded-full border border-white/5`}>
+                            <View style={[tw`w-2 h-2 rounded-full`, { backgroundColor: healthCheck.getStatusColor() }]} />
+                            <Text style={tw`text-[7px] font-black text-white/40 uppercase tracking-tighter`}>SISTEMA</Text>
+                        </View>
+
+                        <TouchableOpacity 
+                            onPress={() => audioManager.resumeContext().then(() => audioManager.playSound('emergency'))} 
+                            style={tw`p-2 bg-yellow-600/10 rounded-lg border border-yellow-500/20`}
+                        >
+                            <WifiOff size={16} color="#fbff00" />
+                            <Text style={tw`text-[#fbff00] text-[7px] font-black uppercase mt-0.5`}>TESTAR SOM</Text>
+                        </TouchableOpacity>
+
                         <TouchableOpacity onPress={async () => {
                             setIsAuthenticated(false);
                             setBadgeId('');

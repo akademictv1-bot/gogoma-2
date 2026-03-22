@@ -10,6 +10,8 @@ Notifications.setNotificationHandler({
         shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true
     }),
 });
 
@@ -26,7 +28,7 @@ export const registerForPushNotificationsAsync = async () => {
             return;
         }
         token = (await Notifications.getExpoPushTokenAsync({
-            projectId: '5426e25c-89a3-4b6c-b3a5-8e36d80989f6' // ID do projeto Expo (slug gogoma)
+            projectId: '4602389c-b12e-46d5-96b1-e03713ad4468' // ID do projeto Expo em app.json
         })).data;
     }
 

@@ -53,9 +53,12 @@ class HealthCheckSystem {
         };
     }
 
+    private startTime: number = 0;
+    
     start() {
         if (this.isRunning) return;
         this.isRunning = true;
+        this.startTime = Date.now();
         console.log("[HealthCheck] Iniciando monitoramento de saúde do sistema...");
         this.performFullHealthCheck();
         setInterval(() => this.performFullHealthCheck(), this.checkInterval);
@@ -93,6 +96,8 @@ class HealthCheckSystem {
 
     private async checkFirebaseConnection() {
         const start = Date.now();
+        const startupGrace = Date.now() - this.startTime < 15000;
+
         try {
             const testRef = doc(db, 'health_check', 'test');
             await setDoc(testRef, { timestamp: Date.now() }, { merge: true });
@@ -100,12 +105,13 @@ class HealthCheckSystem {
             this.systemStatus.network_latency = Date.now() - start;
         } catch (err: any) {
             this.systemStatus.firebase_connection = false;
-            this.logError("FIREBASE_CONNECTION", err.message, "critical");
-            this.triggerAlert("Firebase desconectado!");
+            this.logError("FIREBASE_CONNECTION", err.message, startupGrace ? "medium" : "critical");
+            if (!startupGrace) this.triggerAlert("Firebase desconectado!");
         }
     }
 
     private async checkDatabaseAccess() {
+        const startupGrace = Date.now() - this.startTime < 15000;
         try {
             // Tenta ler 3 coleções principais (adaptando nomes para o projeto)
             const checks = [
@@ -117,8 +123,8 @@ class HealthCheckSystem {
             this.systemStatus.database_accessibility = true;
         } catch (err: any) {
             this.systemStatus.database_accessibility = false;
-            this.logError("DATABASE_ACCESS", err.message, "high");
-            this.triggerAlert("Banco de dados indisponível!");
+            this.logError("DATABASE_ACCESS", err.message, startupGrace ? "low" : "high");
+            if (!startupGrace) this.triggerAlert("Banco de dados indisponível!");
         }
     }
 
@@ -223,11 +229,13 @@ class HealthCheckSystem {
     }
 
     private async checkAlertConditions() {
-        const recentErrors = this.errorLog.filter(e => Date.now() - e.timestamp < 60000);
+        // Reduzida a agressividade: apenas loga se houver problemas críticos, 
+        // mas não re-dispara o alerta visual principal em loop.
+        const recentErrors = this.errorLog.filter(e => Date.now() - e.timestamp < 30000);
         const criticalCount = recentErrors.filter(e => e.severity === 'critical').length;
         
-        if (criticalCount > 0) {
-            this.emergencyAlert("Múltiplos problemas críticos detectados!");
+        if (criticalCount > 0 && !this.isThrottled("check_conditions")) {
+            console.warn(`[HealthCheck] ${criticalCount} problemas críticos detectados recentemente.`);
         }
     }
 
@@ -254,12 +262,11 @@ class HealthCheckSystem {
 
         console.error(`%c ⛔ EMERGÊNCIA GOGOMA: ${mensagem}`, "color: white; background: red; font-size: 16px; font-weight: bold;");
         
+        // Alerta visual agressivo REMOVIDO para estabilidade da interface
         if (Platform.OS === 'web') {
             if ("Notification" in window && Notification.permission === "granted") {
                 new Notification("⛔ EMERGÊNCIA GOGOMA", { body: mensagem, requireInteraction: true });
             }
-            if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]);
-            this.flashScreenRed();
         }
     }
 
@@ -280,23 +287,11 @@ class HealthCheckSystem {
         return false;
     }
 
-    private flashScreenRed() {
-        if (Platform.OS !== 'web') return;
-        const overlay = document.createElement("div");
-        Object.assign(overlay.style, {
-            position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
-            background: 'red', opacity: '0.5', zIndex: '10000', pointerEvents: 'none'
-        });
-        document.body.appendChild(overlay);
-        
-        let count = 0;
-        const interval = setInterval(() => {
-            overlay.style.display = overlay.style.display === 'none' ? 'block' : 'none';
-            if (++count >= 10) {
-                clearInterval(interval);
-                document.body.removeChild(overlay);
-            }
-        }, 100);
+    public getStatusColor(): string {
+        const s = this.systemStatus;
+        if (!s.firebase_connection || !s.database_accessibility) return '#ef4444'; // Red
+        if (s.network_latency > 1000 || s.active_requests_count > 100) return '#fbbf24'; // Yellow
+        return '#22c55e'; // Green
     }
 
     private printMiniStatus() {

@@ -7,6 +7,8 @@ import CitizenScreen from './screens/CitizenScreen';
 import PoliceScreen from './screens/PoliceScreen';
 
 import { db } from './services/firebase';
+import { audioManager } from './services/AudioManager';
+import { alarmMonitor } from './services/AlarmMonitor';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from './types';
 
@@ -43,6 +45,7 @@ const AppContent: React.FC = () => {
     const [viewMode, setViewMode] = useState<'citizen' | 'police'>('citizen');
     const [isOnline, setIsOnline] = useState(true);
     const [alerts, setAlerts] = useState<EmergencyAlert[]>([]);
+    const fastTrackedAlerts = React.useRef(new Set<string>());
 
     const NEON_YELLOW = "#fbff00";
 
@@ -63,6 +66,30 @@ const AppContent: React.FC = () => {
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
+                
+                // GUARDA DE SILÊNCIO: Para IMEDIATAMENTE se não houver pedidos que precisem de sirene
+                const activeAlerts = docs.filter(a => 
+                    a.status === AlertStatus.NEW || 
+                    (a.status === AlertStatus.IN_PROGRESS && !a.estado_alarme?.despacho_silenciado)
+                );
+
+                if (activeAlerts.length === 0) {
+                    audioManager.stopAllAlarms();
+                }
+
+                // GATILHO DE ELITE: Tocar Sirene no PRIMEIRO SEGUNDO (Regra de Engenharia)
+                docs.forEach(alert => {
+                    if (alert.status === AlertStatus.NEW && (alert.contador_toques || 0) === 0) {
+                        if (!fastTrackedAlerts.current.has(alert.id)) {
+                            fastTrackedAlerts.current.add(alert.id);
+                            console.log(`[FastTrack] Novo SOS detetado! Disparando sirene imediata para: ${alert.id}`);
+                            audioManager.resumeContext().then(() => {
+                                alarmMonitor.playAlarmSequence(alert.id);
+                            }).catch(() => {});
+                        }
+                    }
+                });
+
                 // Log apenas se houver mudança para não inundar o console
                 if (docs.length !== alerts.length) {
                     console.log(`[Sync] ${docs.length} alertas sincronizados.`);
@@ -70,7 +97,14 @@ const AppContent: React.FC = () => {
                 setAlerts(docs);
             }, (error: any) => {
                 console.error("[Sync] Erro no Firestore:", error);
-                Alert.alert("Erro de Sincronização", `Falha ao carregar alertas: ${error.message}\nVerifique as Regras do Firestore.`);
+                if (error.message?.toLowerCase().includes('permission')) {
+                    Alert.alert(
+                        "Bloqueio de Segurança no Firebase", 
+                        "NOTA: O erro 'missing permission' não é do seu computador!\n\nAs Regras de Segurança do seu banco de dados Firebase estão bloqueando a leitura das emergências.\n\nVá ao painel do Firebase -> Firestore Database -> Regras e adicione: allow read, write: if true;"
+                    );
+                } else {
+                    Alert.alert("Erro de Sincronização", `Falha ao carregar alertas: ${error.message}\nVerifique as Regras do Firestore.`);
+                }
             });
 
             return () => {
@@ -145,30 +179,6 @@ const AppContent: React.FC = () => {
                 )}
             </View>
 
-            <View style={tw`bg-[#0a0a0c] p-4 border-t border-white/5`}>
-                <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
-                    <Text style={tw`text-slate-400 text-xs text-center`}>Contactar: akademictv@gmail.com</Text>
-                    <Text style={tw`text-slate-400 text-xs text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
-                    <Text style={tw`text-slate-400 text-xs text-center`}>Endereço: Chimoio, Moçambique</Text>
-                </View>
-                <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
-                    <TouchableOpacity onPress={() => Platform.OS === 'web' ? window.location.href='/privacy.html' : Linking.openURL('https://gogoma.com.mz/privacy.html')}>
-                        <Text style={tw`text-[#fbff00] text-xs underline`}>Política de Privacidade</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => Platform.OS === 'web' ? window.location.href='/terms.html' : Linking.openURL('https://gogoma.com.mz/terms.html')}>
-                        <Text style={tw`text-[#fbff00] text-xs underline`}>Termos de Uso</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => Platform.OS === 'web' ? window.location.href='/contactos.html' : Linking.openURL('https://gogoma.com.mz/contactos.html')}>
-                        <Text style={tw`text-[#fbff00] text-xs underline`}>Contactos</Text>
-                    </TouchableOpacity>
-                </View>
-                <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
-                    © 2026 Akademic TV. Todos os direitos reservados.
-                </Text>
-                <Text style={tw`text-slate-500 text-[10px] text-center`}>
-                    O sistema também pertence ao Município de Chimoio (CMC).
-                </Text>
-            </View>
         </SafeAreaView>
     );
 };
