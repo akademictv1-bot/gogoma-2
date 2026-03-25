@@ -6,7 +6,7 @@ import tw from 'twrnc';
 import { Animated } from 'react-native';
 
 import { db } from '../services/firebase';
-import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch, increment } from 'firebase/firestore';
+import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from '../types';
 import { audioManager } from '../services/AudioManager';
 import { alarmMonitor } from '../services/AlarmMonitor';
@@ -155,8 +155,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     };
 
     const updateAlertStatus = async (id: string, status: AlertStatus) => {
-        // OTIMISMO DE ELITE: Fecha o modal IMEDIATAMENTE antes mesmo da rede responder
-        // Isso garante que o operador sinta a interface "instantânea"
+        // Fecha o modal IMEDIATAMENTE (optimistic UI) — sem esperar resposta da rede
         setSelectedAlert(null);
         if (status === AlertStatus.RESOLVED) {
             setActiveTab('resolved');
@@ -164,39 +163,34 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
 
         try {
             const docRef = doc(db, 'emergencias', id);
-            audioManager.stopAlarm(id);
-            
+
+            // Silenciar o alarme global imediatamente (nova arquitectura: alarme único global)
+            alarmMonitor.silenceNow();
+
             if (status === AlertStatus.IN_PROGRESS) {
-                await updateDoc(docRef, { 
-                    status, 
+                // Despachar: silenciar alarme no Firestore por 30 minutos.
+                // A reactivação aos 30 min é gerida pelo AlarmMonitor (resistente a reloads).
+                await updateDoc(docRef, {
+                    status,
                     dataAtualizacao: Date.now(),
                     timestamp_despacho: Date.now(),
-                    "estado_alarme.tocando": false,
-                    "estado_alarme.despacho_silenciado": true,
-                    "estado_alarme.despacho_timestamp_silencio": Date.now()
+                    'estado_alarme.tocando': false,
+                    'estado_alarme.despacho_silenciado': true,
+                    'estado_alarme.despacho_timestamp_silencio': Date.now(),
                 });
-                
-                // Agendamento de reativação (background)
-                const thirtyMinutesInMs = 30 * 60 * 1000;
-                setTimeout(async () => {
-                    const snap = await getDoc(docRef);
-                    if (snap.exists() && snap.data().status === AlertStatus.IN_PROGRESS) {
-                        await updateDoc(docRef, { "estado_alarme.despacho_silenciado": false, contador_toques: increment(3) });
-                    }
-                }, thirtyMinutesInMs);
 
             } else if (status === AlertStatus.RESOLVED) {
-                await updateDoc(docRef, { 
-                    status, 
+                // Resolver: silêncio definitivo para este pedido.
+                await updateDoc(docRef, {
+                    status,
                     dataAtualizacao: Date.now(),
                     timestamp_conclusao: Date.now(),
-                    "estado_alarme.tocando": false,
-                    "estado_alarme.despacho_silenciado": false
+                    'estado_alarme.tocando': false,
+                    'estado_alarme.despacho_silenciado': false,
                 });
             }
         } catch (err: any) {
-            // Rollback visual discreto ou apenas aviso de erro
-            console.error("Erro ao atualizar status:", err);
+            console.error('Erro ao atualizar status:', err);
             Alert.alert('Erro de Ligação', `O pedido ${id} não pôde ser atualizado. Tente novamente.`);
         }
     };
@@ -296,21 +290,11 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
         }
     };
 
-    // ──────────── LÓGICA DE ÁUDIO PROFISSIONAL ────────────
-    // Regras Mestre:
-    // 1. SOS entra (NEW) → alarme toca IMEDIATAMENTE
-    // 2. Sem ação (NEW) → repete a cada 60 segundos
-    // 3. Despachar (IN_PROGRESS) → SILÊNCIO por 30 minutos (por pedido)
-    // 4. Stale (>30 min em IN_PROGRESS) → Alarme VOLTA a tocar
-    // 5. Resolver (RESOLVED) → Silêncio total para aquele pedido
-    // 6. Alarme para APENAS se não houver NENHUM alerta NEW ou STALE
-
+    // Parar alarmes quando o utilizador faz logout
     useEffect(() => {
         if (!isAuthenticated) {
             audioManager.stopAllAlarms();
             alarmMonitor.stop();
-            // O HealthCheck pode continuar rodando ou parar conforme preferência
-            // Geralmente, em produção, é bom mantê-lo rodando se o app estiver aberto
             return;
         }
     }, [isAuthenticated]);
@@ -321,22 +305,11 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }, [alerts, activeTab]);
 
-    // SINCRONIZAÇÃO DE ELITE: Atualiza o modal aberto ou FECHA conforme o estado
+    // Fechar modal se o pedido for apagado externamente
     useEffect(() => {
         if (selectedAlert) {
-            const updated = alerts.find(a => a.id === selectedAlert.id);
-            if (updated) {
-                // Se foi RESOLVIDO ou DESPACHADO, fecha o modal automaticamente (Fluxo de Trabalho Limpo)
-                if (updated.status === AlertStatus.RESOLVED || updated.status === AlertStatus.IN_PROGRESS) {
-                    setSelectedAlert(null);
-                    return;
-                }
-
-                if (JSON.stringify(updated) !== JSON.stringify(selectedAlert)) {
-                    setSelectedAlert(updated);
-                }
-            } else {
-                // Foi apagado do banco
+            const exists = alerts.find(a => a.id === selectedAlert.id);
+            if (!exists) {
                 setSelectedAlert(null);
             }
         }

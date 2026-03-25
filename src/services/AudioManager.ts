@@ -25,7 +25,6 @@ class AudioManager {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
             if (this.audioContext.state === 'suspended') {
-                console.log("[AudioManager] Retomando Contexto de Áudio...");
                 await this.audioContext.resume();
             }
         } else {
@@ -42,7 +41,6 @@ class AudioManager {
     }
 
     async addAlarmToQueue(pedidoId: string, alarmType: string) {
-        console.log(`[AudioManager] Adicionando à fila: ${pedidoId} (${alarmType})`);
         this.audioQueue.push({
             pedidoId,
             alarmType,
@@ -65,7 +63,6 @@ class AudioManager {
     }
 
     async playAlarm(pedidoId: string, alarmType: string) {
-        console.log(`[AudioManager] Tocando alarme para: ${pedidoId}`);
         this.activeAlarms.set(pedidoId, {
             state: "tocando",
             startTime: Date.now(),

@@ -29,7 +29,7 @@ export interface ErrorLogEntry {
 }
 
 class HealthCheckSystem {
-    private checkInterval: number = 1000;
+    private checkInterval: number = 30_000; // 30 s — evita write storms no Firestore
     public systemStatus: SystemStatus;
     public errorLog: ErrorLogEntry[] = [];
     private alertThreshold: number = 3;
@@ -59,12 +59,11 @@ class HealthCheckSystem {
         if (this.isRunning) return;
         this.isRunning = true;
         this.startTime = Date.now();
-        console.log("[HealthCheck] Iniciando monitoramento de saúde do sistema...");
         this.performFullHealthCheck();
         setInterval(() => this.performFullHealthCheck(), this.checkInterval);
-        
-        // Relatório a cada 10 segundos
-        setInterval(() => this.generateReport(), 10000);
+
+        // Relatório a cada 5 minutos
+        setInterval(() => this.generateReport(), 300_000);
     }
 
     private async performFullHealthCheck() {
@@ -302,7 +301,7 @@ class HealthCheckSystem {
             au: s.audio_manager_active ? '🔊' : '❌',
             mon: s.alarm_monitor_active ? '👁️' : '❌'
         };
-        console.log(`${icons.fb} Firebase | ${icons.db} DB | ${icons.au} Audio | ${icons.mon} Mon | 🚨 Ativos: ${s.active_requests_count} | 🌐 Lat: ${s.network_latency}ms`);
+        // printMiniStatus desactivado em produção (evita spam no console)
     }
 
     private generateReport() {
@@ -319,9 +318,7 @@ class HealthCheckSystem {
             ultimos_erros: this.errorLog.slice(-3).map(e => e.type)
         };
 
-        console.table([report]);
-
-        // Salvar relatório para histórico
+        // Guardar no Firestore para histórico remoto
         addDoc(collection(db, 'system_reports'), { ...report, raw_timestamp: Date.now() }).catch(() => {});
     }
 }

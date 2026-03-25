@@ -361,7 +361,7 @@ const CitizenScreen: React.FC = () => {
                             manualAddress: `${realAddress} (Auto) | ${profile!.city}, ${profile!.neighborhood} (Perfil)`,
                             dataAtualizacao: Date.now()
                         });
-                        console.log("[OSS] Endereço automático resolvido.");
+
                     }
                 }
             };
@@ -403,7 +403,7 @@ const CitizenScreen: React.FC = () => {
                     images: imageUrls,
                     dataAtualizacao: Date.now()
                 });
-                console.log("[OSS] Imagens de background enviadas com sucesso.");
+
             }
         } catch (err) {
             console.error("[OSS] Erro ao enviar imagens em background:", err);

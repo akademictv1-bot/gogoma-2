@@ -7,8 +7,7 @@ import CitizenScreen from './screens/CitizenScreen';
 import PoliceScreen from './screens/PoliceScreen';
 
 import { db } from './services/firebase';
-import { audioManager } from './services/AudioManager';
-import { alarmMonitor } from './services/AlarmMonitor';
+
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from './types';
 
@@ -45,7 +44,6 @@ const AppContent: React.FC = () => {
     const [viewMode, setViewMode] = useState<'citizen' | 'police'>('citizen');
     const [isOnline, setIsOnline] = useState(true);
     const [alerts, setAlerts] = useState<EmergencyAlert[]>([]);
-    const fastTrackedAlerts = React.useRef(new Set<string>());
 
     const NEON_YELLOW = "#fbff00";
 
@@ -66,34 +64,6 @@ const AppContent: React.FC = () => {
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
-                
-                // GUARDA DE SILÊNCIO: Para IMEDIATAMENTE se não houver pedidos que precisem de sirene
-                const activeAlerts = docs.filter(a => 
-                    a.status === AlertStatus.NEW || 
-                    (a.status === AlertStatus.IN_PROGRESS && !a.estado_alarme?.despacho_silenciado)
-                );
-
-                if (activeAlerts.length === 0) {
-                    audioManager.stopAllAlarms();
-                }
-
-                // GATILHO DE ELITE: Tocar Sirene no PRIMEIRO SEGUNDO (Regra de Engenharia)
-                docs.forEach(alert => {
-                    if (alert.status === AlertStatus.NEW && (alert.contador_toques || 0) === 0) {
-                        if (!fastTrackedAlerts.current.has(alert.id)) {
-                            fastTrackedAlerts.current.add(alert.id);
-                            console.log(`[FastTrack] Novo SOS detetado! Disparando sirene imediata para: ${alert.id}`);
-                            audioManager.resumeContext().then(() => {
-                                alarmMonitor.playAlarmSequence(alert.id);
-                            }).catch(() => {});
-                        }
-                    }
-                });
-
-                // Log apenas se houver mudança para não inundar o console
-                if (docs.length !== alerts.length) {
-                    console.log(`[Sync] ${docs.length} alertas sincronizados.`);
-                }
                 setAlerts(docs);
             }, (error: any) => {
                 console.error("[Sync] Erro no Firestore:", error);
