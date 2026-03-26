@@ -44,21 +44,27 @@ export const watchLocation = async (callback: (loc: any) => void) => {
     const hasPermission = await requestLocationPermissions();
     if (!hasPermission) return null;
 
-    // MÁXIMA PRECISÃO para rastreamento contínuo
-    return await Location.watchPositionAsync(
-        {
-            accuracy: Location.Accuracy.BestForNavigation, // MÁXIMA PRECISÃO
-            timeInterval: 1000, // Atualizar a cada 1 segundo
-            distanceInterval: 1, // Atualizar a cada 1 metro
-        },
-        (location) => {
-            callback({
-                lat: location.coords.latitude,
-                lng: location.coords.longitude,
-                accuracy: location.coords.accuracy,
-            });
-        }
-    );
+    try {
+        // Usar High em vez de BestForNavigation para maior compatibilidade com Expo 53
+        const subscription = await Location.watchPositionAsync(
+            {
+                accuracy: Location.Accuracy.High,
+                timeInterval: 2000, // Atualizar a cada 2 segundos (menos agressivo)
+                distanceInterval: 5, // Atualizar a cada 5 metros
+            },
+            (location) => {
+                callback({
+                    lat: location.coords.latitude,
+                    lng: location.coords.longitude,
+                    accuracy: location.coords.accuracy,
+                });
+            }
+        );
+        return subscription;
+    } catch (err) {
+        console.error('[GPS] Erro ao iniciar watchLocation:', err);
+        return null;
+    }
 };
 
 export const getAddressFromCoords = async (lat: number, lng: number) => {

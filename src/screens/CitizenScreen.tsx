@@ -129,8 +129,12 @@ const CitizenScreen: React.FC = () => {
 
         return () => {
             unsubConfig();
-            if (locationSubscription && locationSubscription.remove) {
-                locationSubscription.remove();
+            if (locationSubscription) {
+                try {
+                    locationSubscription.remove();
+                } catch (e) {
+                    console.warn('[GPS] Erro ao remover subscrição de localização:', e);
+                }
             }
         };
     }, []);

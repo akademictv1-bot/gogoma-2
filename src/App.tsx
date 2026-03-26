@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Component } from 'react';
-import { View, TouchableOpacity, Text, SafeAreaView, StatusBar, Alert, Platform, Linking } from 'react-native';
+import { View, TouchableOpacity, Text, SafeAreaView, StatusBar } from 'react-native';
 import { Smartphone, Siren, Wifi, WifiOff } from 'lucide-react-native';
 import tw from 'twrnc';
 
@@ -66,15 +66,9 @@ const AppContent: React.FC = () => {
                 const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
                 setAlerts(docs);
             }, (error: any) => {
-                console.error("[Sync] Erro no Firestore:", error);
-                if (error.message?.toLowerCase().includes('permission')) {
-                    Alert.alert(
-                        "Bloqueio de Segurança no Firebase", 
-                        "NOTA: O erro 'missing permission' não é do seu computador!\n\nAs Regras de Segurança do seu banco de dados Firebase estão bloqueando a leitura das emergências.\n\nVá ao painel do Firebase -> Firestore Database -> Regras e adicione: allow read, write: if true;"
-                    );
-                } else {
-                    Alert.alert("Erro de Sincronização", `Falha ao carregar alertas: ${error.message}\nVerifique as Regras do Firestore.`);
-                }
+                // NOTA: Usar apenas console.error no web para evitar notificações/alertas nativos do sistema
+                // Alert.alert no web usa window.alert que o Safari mostra como notificação do macOS
+                console.error("[Sync] Erro no Firestore:", error.message);
             });
 
             return () => {
