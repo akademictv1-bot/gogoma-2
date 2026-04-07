@@ -32,3 +32,5 @@ doctor_output.txt
 web_bundle_log.txt
 web_export_log.txt
 .env
+.env.local
+.env.*.local

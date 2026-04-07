@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Segurança - Gogoma</title>
+    <style>
+        :root {
+            --primary: #1e3c72;
+            --bg: #FFFFFF;
+            --surface: #f8fafc;
+            --text: #333333;
+            --text-dim: #4b5563;
+        }
+        body { 
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 14pt;
+            line-height: 1.8; 
+            color: var(--text); 
+            max-width: 900px; 
+            margin: 0 auto; 
+            padding: 40px 2cm; 
+            background-color: var(--bg); 
+        }
+        @media print {
+            body { padding: 0; background-color: #FFF; color: #000; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+        h1 { 
+            color: var(--primary); 
+            font-size: 2.5rem; 
+            font-weight: bold; 
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+        }
+        .last-updated {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 3rem;
+            font-weight: bold;
+            opacity: 0.8;
+        }
+        h2 { 
+            color: var(--primary); 
+            margin-top: 3rem; 
+            font-size: 1.3rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        p, li { 
+            margin-bottom: 1.1rem; 
+            color: var(--text);
+        }
+        strong {
+            color: var(--text);
+            font-weight: bold;
+        }
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid var(--primary);
+            padding: 1.5rem 2rem;
+            border-radius: 0 8px 8px 0;
+            margin: 2rem 0;
+        }
+        .warning-box { 
+            background-color: #fef2f2; 
+            border-left: 4px solid #dc2626;
+            color: #991b1b;
+            padding: 1.5rem 2rem; 
+            border-radius: 0 8px 8px 0;
+            margin: 2rem 0; 
+            font-weight: bold;
+        }
+        .footer { 
+            margin-top: 4rem; 
+            font-size: 0.9rem; 
+            color: var(--text-dim); 
+            text-align: center; 
+            border-top: 1px solid #e2e8f0; 
+            padding-top: 2rem; 
+            padding-bottom: 2rem;
+            line-height: 1.6;
+        }
+        .footer a {
+            color: var(--primary);
+            margin: 0 10px;
+            text-decoration: underline;
+        }
+        .contact-box { 
+            background: var(--surface); 
+            padding: 2rem; 
+            border-radius: 8px; 
+            border: 1px solid #cbd5e1; 
+            margin-top: 2rem; 
+        }
+        a { color: var(--primary); text-decoration: underline; font-weight: bold; }
+        a:hover { color: #1e40af; }
+        ul { padding-left: 0; list-style-type: none; }
+        ul li { position: relative; padding-left: 1.5rem; }
+        ul li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: bold;
+        }
+        .bullet-list li::before {
+            content: "•";
+            font-size: 1.5rem;
+            top: -0.2rem;
+            color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <h1>Segurança</h1>
+    <div class="last-updated">Última atualização: 08 de abril de 2026 &nbsp;|&nbsp; Versão 1.0</div>
+
+    <h2>01. O Nosso Compromisso com a Segurança</h2>
+    <p>A segurança não é uma funcionalidade opcional no Gogoma — é a fundação sobre a qual toda a plataforma foi construída. Quando um cidadão prime o botão SOS, está a partilhar a sua localização exata e a sua identidade com as autoridades. Isso exige da nossa parte um nível de responsabilidade e cuidado que levamos muito a sério.</p>
+    <p>Esta página descreve de forma clara e honesta as medidas técnicas e organizacionais que implementámos para proteger os dados e a integridade da plataforma.</p>
+
+    <h2>02. Encriptação de Dados</h2>
+    <p>Toda a comunicação entre a aplicação móvel Gogoma e os nossos servidores é protegida por <strong>TLS/HTTPS</strong> — o mesmo protocolo utilizado por bancos e plataformas governamentais em todo o mundo. Isso significa que os dados enviados durante um pedido de socorro não podem ser intercetados por terceiros durante a transmissão.</p>
+    <p>Os dados armazenados nos servidores da Google (Firebase) estão encriptados em repouso com <strong>AES-256</strong>, um standard de encriptação militar que torna os dados ilegíveis para qualquer pessoa sem a chave de acesso correta.</p>
+
+    <h2>03. Autenticação e Controlo de Acesso</h2>
+    <p>O sistema utiliza <strong>autenticação por número de telemóvel com código SMS de utilização única</strong>. Não existem senhas no sistema — o que elimina o risco de senhas fracas, reutilizadas ou comprometidas.</p>
+    <p>O acesso ao painel de Comando PRM é restrito a operadores expressamente autorizados. Cada sessão é registada com data, hora e identificador do operador, criando um rastro de auditoria completo de quem acedeu ao quê e quando.</p>
+    <ul class="bullet-list">
+        <li><strong>Cidadãos:</strong> Só podem submeter pedidos de socorro com a sua própria conta autenticada.</li>
+        <li><strong>Operadores PRM:</strong> Acedem ao painel de gestão com credenciais dedicadas e controladas pela equipa técnica.</li>
+        <li><strong>Administradores:</strong> Nível de acesso mais elevado, restrito à equipa técnica da Akademic TV para manutenção do sistema.</li>
+    </ul>
+
+    <h2>04. Regras de Segurança da Base de Dados</h2>
+    <p>A base de dados Firestore (Google) está configurada com regras de segurança que definem com precisão quem pode ler, escrever ou apagar cada tipo de informação. Por exemplo:</p>
+    <ul>
+        <li>Um cidadão comum não consegue, tecnicamente, aceder a dados de outros utilizadores</li>
+        <li>Um operador PRM pode visualizar e gerir pedidos, mas não pode apagar registos históricos</li>
+        <li>Nenhum utilizador não autenticado consegue ler nem escrever na base de dados</li>
+        <li>O Firebase Storage (onde estão as fotografias) tem regras equivalentes de controlo de acesso</li>
+    </ul>
+
+    <h2>05. Proteção da Localização GPS</h2>
+    <p>A localização GPS do utilizador é capturada <strong>apenas no momento</strong> em que o pedido SOS é submetido. A aplicação não rastreia a localização do utilizador continuamente em segundo plano. Após o envio do pedido, a localização permanece associada ao registo da ocorrência e é acessível apenas aos operadores autorizados.</p>
+    <p>Quando o GPS não está disponível, a aplicação usa a última coordenada conhecida armazenada localmente, notificando o operador dessa limitação. A precisão depende do sinal disponível no momento do envio.</p>
+
+    <h2>06. Armazenamento Local Seguro</h2>
+    <p>Para funcionar em zonas sem cobertura de rede (uma realidade comum em Moçambique), a aplicação guarda localmente alguns dados essenciais no dispositivo do utilizador, incluindo a última localização GPS e o token de sessão autenticada.</p>
+    <p>Estes dados são armazenados de forma segura, utilizando as capacidades de armazenamento protegido disponíveis em Android e iOS. Nenhum dado sensível é guardado em texto simples no dispositivo.</p>
+
+    <h2>07. Sem Publicidade, Sem Rastreamento Comercial</h2>
+    <p>O Gogoma não contém qualquer tipo de publicidade, rastreamento comportamental ou partilha de dados com redes de anúncios. Não existe SDK de terceiros para análise de comportamento de utilizadores com fins comerciais.</p>
+    <p>Os únicos dados recolhidos são os estritamente necessários para o funcionamento do sistema de socorro — definidos na nossa <a href="privacy.html">Política de Privacidade</a>.</p>
+
+    <h2>08. Prevenção de Uso Abusivo</h2>
+    <p>O sistema inclui mecanismos para detetar e bloquear padrões de uso abusivo, incluindo envio repetido de alertas falsos. Cada pedido fica registado com o número de telemóvel e identificador do dispositivo, o que torna impossível o anonimato em caso de abuso.</p>
+    <div class="warning-box">
+        O envio de alertas falsos é monitorizado automaticamente. Utilizadores identificados como reincidentes em abuso do sistema serão bloqueados permanentemente e os seus dados remetidos às autoridades competentes.
+    </div>
+
+    <h2>09. Auditorias e Monitorização Contínua</h2>
+    <p>A equipa técnica da Akademic TV realiza revisões regulares da segurança do sistema, incluindo análise de logs, verificação de acessos não autorizados e testes de funcionalidade das regras de segurança. A plataforma é monitorizada continuamente para detetar anomalias ou comportamentos suspeitos.</p>
+    <p>Sempre que são descobertas vulnerabilidades — seja pela equipa interna ou por utilizadores externos — são corrigidas com a máxima prioridade, antes de qualquer outra atualização de funcionalidade.</p>
+
+    <h2>10. Responsabilidade pela Resposta ao Incidente</h2>
+    <p>Em caso de incidente de segurança que possa ter comprometido dados de utilizadores, a Akademic TV compromete-se a:</p>
+    <ul>
+        <li>Notificar os utilizadores afetados no prazo de 72 horas após a deteção</li>
+        <li>Descrever de forma clara e honesta o que aconteceu, o que pode ter sido exposto e as medidas tomadas</li>
+        <li>Corrigir a vulnerabilidade e implementar medidas adicionais de proteção</li>
+        <li>Cooperar com as autoridades competentes, se aplicável</li>
+    </ul>
+
+    <h2>11. Reportar uma Vulnerabilidade</h2>
+    <p>Acreditamos que a segurança é um esforço coletivo. Se descobrir uma vulnerabilidade, um comportamento inesperado, ou qualquer situação que pareça comprometer a segurança da plataforma ou dos seus utilizadores, pedimos que nos informe imediatamente — antes de partilhar a informação publicamente.</p>
+    <p>Prometemos tratar todos os relatórios de segurança com seriedade e confidencialidade, e reconhecer o contributo de quem nos ajuda a melhorar o sistema.</p>
+
+    <div class="contact-box">
+        <p><strong>Para reportar uma vulnerabilidade de segurança:</strong></p>
+        <ul class="bullet-list">
+            <li>Email: <a href="mailto:akademictv@gmail.com?subject=SEGURANÇA - GOGOMA">akademictv@gmail.com</a> — com o assunto <strong>"SEGURANÇA - GOGOMA"</strong></li>
+            <li>Telefone: <a href="tel:+258821481573">+258 82 148 1573</a> (Wilady Manuel Joaquim)</li>
+            <li>Resposta garantida em até <strong>48 horas úteis</strong></li>
+        </ul>
+    </div>
+
+    <h2>12. Infraestrutura e Parceiros Tecnológicos</h2>
+    <p>A plataforma Gogoma é construída sobre a infraestrutura da <strong>Google Firebase</strong>, incluindo:</p>
+    <ul class="bullet-list">
+        <li><strong>Firebase Authentication:</strong> Gestão segura de autenticação por SMS</li>
+        <li><strong>Cloud Firestore:</strong> Base de dados em tempo real com regras de segurança granulares</li>
+        <li><strong>Firebase Storage:</strong> Armazenamento seguro de evidências visuais (fotografias)</li>
+        <li><strong>Firebase Cloud Functions:</strong> Lógica de servidor em ambiente seguro e isolado</li>
+    </ul>
+    <p>A Google é certificada nas normas <strong>ISO 27001, SOC 2 Tipo II</strong> e em conformidade com o GDPR europeu, garantindo os mais altos padrões de segurança física e lógica para os dados da plataforma.</p>
+
+    <div class="footer">
+        <strong>Contactos Oficiais:</strong><br><br>
+        Email: <a href="mailto:akademictv@gmail.com">akademictv@gmail.com</a><br>
+        Telefones: <a href="tel:+258821481573">+258 82 148 1573</a> | <a href="tel:+258874644289">+258 87 464 4289</a><br>
+        Endereço: Chimoio, Moçambique<br><br>
+        
+        © 2026 Akademic TV. Todos os direitos reservados.<br>
+        Sistema desenvolvido pela equipa Akademic TV em parceria com o Município de Chimoio (CMC).
+    </div>
+</body>
+</html>

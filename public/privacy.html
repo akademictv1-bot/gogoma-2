@@ -16,7 +16,7 @@
         body { 
             font-family: 'Times New Roman', Times, serif;
             font-size: 14pt;
-            line-height: 1.6; 
+            line-height: 1.8; 
             color: var(--text); 
             max-width: 900px; 
             margin: 0 auto; 
@@ -52,7 +52,7 @@
             margin-bottom: 1.5rem;
         }
         p, li { 
-            margin-bottom: 1rem; 
+            margin-bottom: 1.1rem; 
             color: var(--text);
         }
         strong {
@@ -103,6 +103,13 @@
             border: 1px solid #cbd5e1; 
             margin-top: 2rem; 
         }
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid var(--primary);
+            padding: 1.5rem 2rem;
+            border-radius: 0 8px 8px 0;
+            margin: 2rem 0;
+        }
         a { color: var(--primary); text-decoration: underline; font-weight: bold; }
         a:hover { color: #1e40af; }
         
@@ -124,111 +131,184 @@
     </style>
 </head>
 <body>
-    <h1>Privacidade</h1>
-    <div class="last-updated">Última atualização: 15 de março de 2026</div>
+    <h1>Política de Privacidade</h1>
+    <div class="last-updated">Última atualização: 08 de abril de 2026 &nbsp;|&nbsp; Versão 2.0</div>
 
     <h2>01. Introdução</h2>
-    <p>Bem-vindo ao <strong>Gogoma</strong>. A privacidade e a proteção dos seus dados são de extrema importância para nós. Esta Política de Privacidade descreve como recolhemos, utilizamos, protegemos e processamos as suas informações quando utiliza a nossa plataforma de assistência de emergência em Moçambique.</p>
+    <p>Bem-vindo ao <strong>Gogoma</strong>. A sua privacidade é, para nós, muito mais do que uma obrigação legal — é um compromisso real. Antes de usar a aplicação, queremos que compreenda de forma clara e honesta que tipo de informações recolhemos, porque precisamos delas e o que fazemos com elas.</p>
+    <p>Esta Política de Privacidade aplica-se à aplicação móvel Gogoma (disponível para Android e iOS), ao portal web de Comando PRM, e a todos os serviços associados operados pela <strong>Akademic TV</strong>, com sede em Chimoio, Moçambique.</p>
+    <p>Ao instalar e utilizar o Gogoma, confirma que leu, compreendeu e aceita os termos desta política. Se não concordar com algum ponto, pode optar por não usar a aplicação — o que, com todo o respeito, esperamos que não aconteça, porque o Gogoma foi feito para proteger a sua vida.</p>
 
-    <h2>02. Sobre o Gogoma</h2>
-    <p>O Gogoma é uma plataforma móvel e web concebida para facilitar o pedido de socorro em situações de perigo, urgência ou emergência em Moçambique. O sistema conecta cidadãos em risco às equipas de resposta rápida da <strong>Polícia da República de Moçambique (PRM)</strong>, permitindo uma intervenção rápida e coordenada.</p>
+    <h2>02. Sobre o Gogoma e Quem o Fez</h2>
+    <p>O Gogoma é uma plataforma móvel de resposta a emergências desenvolvida por uma equipa moçambicana liderada pela <strong>Akademic TV</strong>, em parceria com o Município de Chimoio (CMC). O sistema foi concebido de raiz — arquitetura, código, design e lógica de negócio — por esta equipa, com o propósito exclusivo de salvar vidas em Moçambique.</p>
+    <p>A plataforma conecta cidadãos em situações de risco direto às equipas de resposta rápida da <strong>Polícia da República de Moçambique (PRM)</strong>. É importante deixar claro que a PRM é a entidade operacional que usa o sistema — o Comando PRM acede a um painel web dedicado para gerir, acompanhar e responder a cada pedido de socorro recebido. A tecnologia por detrás disso foi criada e é mantida pela equipa da Akademic TV.</p>
+    <p>Este não é um projeto de laboratório ou uma ideia teórica. É uma ferramenta já em uso, pensada para a realidade moçambicana, com as suas limitações de conectividade, diversidade de dispositivos e necessidade de resposta imediata.</p>
 
-    <h2>03. Dados Recolhidos</h2>
-    <p>Seguimos o princípio de minimização de dados. Recolhemos apenas o estritamente necessário para salvaguardar a vida:</p>
+    <h2>03. Dados que Recolhemos</h2>
+    <p>Seguimos o princípio de minimização de dados. Só pedimos aquilo que é estritamente necessário para que o pedido de socorro chegue a quem pode ajudar. Abaixo, o detalhe completo:</p>
     <table>
         <thead>
             <tr>
                 <th>Tipo de Dado</th>
                 <th>Descrição</th>
                 <th>Obrigatório?</th>
+                <th>Finalidade</th>
             </tr>
         </thead>
         <tbody>
             <tr>
                 <td><strong>Número de Telemóvel</strong></td>
-                <td>Número moçambicano (82-87) para contacto das autoridades</td>
+                <td>Número moçambicano (82, 83, 84, 85, 86, 87) para autenticação e contacto</td>
                 <td><span class="check">SIM ✓</span></td>
+                <td>Identificar e contactar o utilizador</td>
             </tr>
             <tr>
                 <td><strong>Localização GPS</strong></td>
-                <td>Coordenadas capturadas no momento do pedido SOS</td>
+                <td>Coordenadas capturadas no momento exato do pedido SOS</td>
                 <td><span class="check">SIM ✓</span></td>
+                <td>Permitir que a PRM localize o cidadão</td>
             </tr>
             <tr>
-                <td><strong>Evidências Visuais</strong></td>
-                <td>Fotografias opcionais como prova da ocorrência</td>
+                <td><strong>Fotografias / Evidências</strong></td>
+                <td>Imagens opcionais tiradas ou enviadas pelo utilizador para documentar a ocorrência</td>
                 <td><span class="cross">NÃO ✗</span></td>
+                <td>Contextualizar a emergência para os operadores</td>
             </tr>
             <tr>
-                <td><strong>Nome do Utilizador</strong></td>
-                <td>Identificação básica perante os socorristas</td>
+                <td><strong>Nome ou Alcunha</strong></td>
+                <td>Identificação de ecrã, opcional, para personalização</td>
                 <td><span class="cross">NÃO ✗</span></td>
+                <td>Melhorar a comunicação com operadores</td>
             </tr>
             <tr>
-                <td><strong>Histórico</strong></td>
-                <td>Registo de ocorrências anteriores para contexto</td>
+                <td><strong>Categoria da Emergência</strong></td>
+                <td>Tipo de ocorrência selecionada pelo utilizador (ex: crime, acidente, incêndio)</td>
                 <td><span class="check">SIM ✓</span></td>
+                <td>Direcionar a resposta correta com maior rapidez</td>
+            </tr>
+            <tr>
+                <td><strong>Histórico de Ocorrências</strong></td>
+                <td>Registo de pedidos anteriores associados ao número de telemóvel</td>
+                <td><span class="check">SIM ✓</span></td>
+                <td>Auditoria, segurança e contexto histórico</td>
+            </tr>
+            <tr>
+                <td><strong>Dados do Dispositivo</strong></td>
+                <td>Modelo do dispositivo e versão do sistema operativo (para diagnóstico técnico)</td>
+                <td><span class="cross">NÃO ✗</span></td>
+                <td>Suporte técnico e melhoria da aplicação</td>
             </tr>
         </tbody>
     </table>
 
-    <h2>04. Finalidade dos Dados</h2>
-    <p>O número de telemóvel é o identificador principal. Sem ele, os socorristas não conseguem estabelecer comunicação direta, o que é crítico em situações de risco. A localização GPS permite que as equipas localizem o utilizador com precisão técnica.</p>
+    <h2>04. Porque Precisamos do Número de Telemóvel</h2>
+    <p>O número de telemóvel é o eixo central desta plataforma. Sem ele, um operador do Comando PRM não consegue ligar de volta ao cidadão — e em situações de emergência, esse contacto pode ser a diferença entre a vida e a morte. Não usamos email, não usamos nome completo, não precisamos do seu BI.</p>
+    <p>O número serve também como identificador único para garantir que o sistema não regista duplicados e para que o histórico de alertas fique devidamente associado a uma conta real, funcional e contactável.</p>
 
-    <h2>05. Utilização da Informação</h2>
+    <h2>05. Localização GPS — Como e Quando É Usada</h2>
+    <p>A localização GPS é capturada <strong>apenas no momento</strong> em que o utilizador prime o botão SOS. A aplicação não rastreia a sua localização de forma contínua em segundo plano enquanto não está a usar ativamente o serviço de emergência.</p>
+    <p>Quando o sinal GPS não está disponível (por exemplo, dentro de edifícios ou em zonas sem cobertura), a aplicação utiliza a última coordenada conhecida armazenada localmente, informando claramente o operador desta situação. A precisão da localização depende da qualidade do sinal no momento do envio.</p>
+    <p>A localização é transmitida em tempo real para o painel de Comando PRM, que a usa exclusivamente para dirigir as equipas de resposta ao local correto. Após a resolução da ocorrência, as coordenadas permanecem associadas ao registo histórico da emergência para fins de auditoria.</p>
+
+    <h2>06. Como Utilizamos a Informação</h2>
     <ul>
-        <li>Identificar a origem do pedido de socorro</li>
-        <li>Coordenar o despacho de unidades de emergência</li>
-        <li>Comunicar com o utilizador durante a ocorrência</li>
-        <li>Manter histórico de segurança e auditoria</li>
-        <li>Gerar relatórios estatísticos anónimos</li>
+        <li>Identificar de forma precisa a origem e a natureza do pedido de socorro</li>
+        <li>Coordenar o despacho de unidades policiais e de emergência para o local correto</li>
+        <li>Estabelecer comunicação direta entre operadores PRM e o cidadão em risco</li>
+        <li>Manter um registo seguro e auditável de todas as ocorrências</li>
+        <li>Gerar dados estatísticos anónimos para apoiar decisões de segurança pública</li>
+        <li>Melhorar continuamente o sistema com base em padrões de uso reais</li>
+        <li>Identificar e bloquear utilizadores que façam uso abusivo da plataforma</li>
     </ul>
 
-    <h2>06. Segurança e Criptografia</h2>
-    <p>O GOGOMA usa encriptação AES-256 para todas as credenciais. Levamos a segurança e a integridade dos dados dos nossos cidadãos extremamente a sério, implementando proteções de nível empresarial em todos os aspetos do sistema:</p>
+    <h2>07. Quem Tem Acesso aos Dados</h2>
+    <p>O acesso aos dados identificáveis dos utilizadores é estritamente limitado:</p>
     <ul class="bullet-list">
-        <li><strong>Acesso Restrito:</strong> Apenas operadores PRM autenticados acedem aos dados</li>
-        <li><strong>Servidor Seguro:</strong> Dados armazenados numa plataforma segura com proteção enterprise</li>
-        <li><strong>Certificação SSL/HTTPS:</strong> Dados em trânsito sempre cifrados para acesso Web e Mobile</li>
-        <li><strong>Auditorias:</strong> Auditorias de segurança regulares conduzidas pela equipa técnica</li>
+        <li><strong>Operadores PRM autenticados:</strong> Acedem ao painel de Comando para visualizar e gerir pedidos de socorro em tempo real. Cada acesso é registado com data, hora e identificador do operador.</li>
+        <li><strong>Equipa técnica da Akademic TV:</strong> Acesso restrito a dados de sistema (logs técnicos, diagnóstico) para manutenção da plataforma. Não acede a dados pessoais dos cidadãos em condições normais.</li>
+        <li><strong>Autoridades Judiciais:</strong> Mediante requisição legal formal, dados específicos podem ser disponibilizados às autoridades competentes, incluindo o Ministério Público, em conformidade com a legislação moçambicana.</li>
+    </ul>
+    <p>Os seus dados <strong>não são partilhados, vendidos, cedidos ou trocados</strong> com quaisquer outras entidades privadas, anunciantes, empresas de marketing, ou terceiros não autorizados.</p>
+
+    <h2>08. Segurança e Proteção dos Dados</h2>
+    <p>Levamos a segurança muito a sério. A plataforma Gogoma utiliza várias camadas de proteção para garantir que os seus dados estejam sempre seguros:</p>
+    <ul class="bullet-list">
+        <li><strong>Encriptação em Trânsito:</strong> Toda a comunicação entre a aplicação e os servidores é feita sobre HTTPS/TLS, garantindo que os dados não possam ser intercetados durante a transmissão.</li>
+        <li><strong>Encriptação em Repouso:</strong> Os dados armazenados nos servidores da Google (Firebase) são encriptados com AES-256, um padrão usado por instituições bancárias e governamentais em todo o mundo.</li>
+        <li><strong>Acesso por Funções:</strong> O sistema utiliza regras de segurança Firestore para garantir que cada tipo de utilizador (cidadão, operador PRM, administrador) só vê e acede ao que é relevante para a sua função.</li>
+        <li><strong>Autenticação Segura:</strong> O acesso à plataforma é feito via número de telemóvel com verificação por código SMS, eliminando o uso de senhas fracas.</li>
+        <li><strong>Monitorização Contínua:</strong> A equipa técnica monitoriza o sistema regularmente e realiza auditorias de segurança para detetar e corrigir vulnerabilidades.</li>
+        <li><strong>Sem Acesso Anónimo:</strong> Não é possível submeter pedidos de socorro ou aceder ao painel de Comando sem autenticação prévia.</li>
     </ul>
 
-    <h2>07. Retenção e Eliminação</h2>
-    <p>Os dados são mantidos pelo período necessário para cumprir obrigações legais de segurança Pública. Após a resolução e auditoria, os dados são eliminados ou anonimizados permanentemente (máximo 3 anos).</p>
+    <h2>09. Onde os Dados São Armazenados</h2>
+    <p>Os dados da plataforma Gogoma são guardados na infraestrutura da <strong>Google Firebase</strong>, com servidores localizados na Europa (Bélgica — região <em>europe-west1</em>). A Google é uma das empresas com maior nível de conformidade de segurança e privacidade no mundo, estando certificada nas normas ISO 27001, SOC 2 e em conformidade com o Regulamento Geral de Proteção de Dados (GDPR) da União Europeia.</p>
+    <p>A escolha desta infraestrutura garante que os dados moçambicanos estejam protegidos pelos mais altos padrões internacionais, mesmo que o acesso ao sistema seja feito a partir de Moçambique.</p>
 
-    <h2>08. Armazenamento Local e Sincronização</h2>
-    <p>Na ausência de ligação à internet, os dados do utilizador (como a localização GPS e detalhes do perfil) são armazenados localmente no dispositivo de forma segura. Assim que a conexão à rede for restabelecida, o sistema sincroniza automaticamente estas informações com os nossos servidores para garantir a continuidade do serviço e do pedido de socorro.</p>
+    <h2>10. Armazenamento Local no Dispositivo</h2>
+    <p>Para garantir que o Gogoma funcione mesmo em zonas sem cobertura de rede — uma realidade comum em muitas partes de Moçambique — a aplicação guarda localmente no dispositivo alguns dados essenciais:</p>
+    <ul class="bullet-list">
+        <li>A última localização GPS conhecida do utilizador</li>
+        <li>As credenciais de sessão (token de autenticação), de forma encriptada</li>
+        <li>Dados básicos do perfil para permitir o acesso offline</li>
+    </ul>
+    <p>Estes dados locais são sincronizados automaticamente com os servidores assim que a ligação à internet é restabelecida. O utilizador pode eliminar estes dados a qualquer momento através das definições do dispositivo ou desinstalando a aplicação.</p>
 
-    <h2>09. Localização do Armazenamento</h2>
-    <p>Os dados recolhidos pela plataforma Gogoma são guardados e geridos na infraestrutura segura da Google (Firebase), localizada em servidores na Europa, beneficiando dos mais altos padrões de segurança e conformidade internacional.</p>
+    <h2>11. Acesso em Tempo Real Durante Emergências</h2>
+    <div class="info-box">
+        <strong>Nota importante:</strong> Durante um pedido de socorro ativo, os dados transmitidos <strong>não são anónimos</strong>. Esta é uma escolha deliberada e necessária. Se a sua identidade e localização fossem escondidas dos operadores, o socorro não poderia chegar até si.
+    </div>
+    <p>No momento em que prime o botão SOS, os operadores autenticados do Comando PRM recebem imediatamente o seu número de telefone, a sua localização GPS em tempo real, a categoria de emergência selecionada e, caso tenha partilhado, fotografias da ocorrência. Este acesso cessa após o registo da resolução da ocorrência no sistema.</p>
 
-    <h2>10. Acesso em Tempo Real</h2>
-    <p>Durante a submissão de um pedido de emergência (SOS), os dados transmitidos <strong>não são anónimos</strong>. A Polícia da República de Moçambique (PRM) e as equipas de intervenção ganham acesso imediato e em tempo real à sua identidade, número de contacto e localização exata, sendo este acesso estritamente necessário para garantir uma resposta rápida, coordenada e salva-vidas.</p>
+    <h2>12. Cookies e Rastreamento Publicitário</h2>
+    <p>O Gogoma <strong>não utiliza cookies</strong> de rastreamento publicitário. Não existe qualquer mecanismo de análise comportamental para fins comerciais. Não há anúncios. Não há perfis publicitários. Não vendemos atenção.</p>
+    <p>A única informação técnica mínima recolhida são logs do sistema (como erros de aplicação e tempos de resposta) que nos ajudam a manter a estabilidade e o bom funcionamento da plataforma. Estes logs não identificam individualmente os utilizadores.</p>
 
-    <h2>11. Cookies e Rastreamento</h2>
-    <p>A plataforma Gogoma <strong>não utiliza cookies</strong> e não realiza qualquer tipo de rastreamento comportamental ou publicitário dos seus utilizadores. O sistema recolhe única e exclusivamente os dados vitais submetidos de forma voluntária para efeitos de emergência.</p>
+    <h2>13. Retenção e Eliminação de Dados</h2>
+    <p>Os dados pessoais são mantidos pelo período mínimo necessário para cumprir as obrigações legais e operacionais da plataforma. As nossas políticas de retenção são:</p>
+    <ul class="bullet-list">
+        <li><strong>Dados de Emergência Ativa:</strong> Mantidos enquanto a ocorrência estiver aberta no sistema.</li>
+        <li><strong>Histórico de Ocorrências:</strong> Retidos por um período máximo de <strong>3 anos</strong> para fins de auditoria e segurança pública, após os quais são anonimizados ou eliminados.</li>
+        <li><strong>Dados de Conta:</strong> Mantidos enquanto o número de telemóvel estiver registado na plataforma. O utilizador pode solicitar a eliminação a qualquer momento.</li>
+        <li><strong>Fotografias:</strong> Eliminadas do armazenamento ativo após a resolução da ocorrência. Podem permanecer em backups encriptados por até 12 meses adicionais.</li>
+    </ul>
 
-    <h2>12. Partilha de Dados</h2>
-    <p>Os seus dados <strong>não são vendidos ou partilhados</strong> com empresas privadas. O acesso é exclusivo ao Comando PRM e autoridades judiciais mediante requisição legal.</p>
+    <h2>14. Os Seus Direitos</h2>
+    <p>Respeitamos os seus direitos como titular de dados, em conformidade com as melhores práticas internacionais (incluindo o GDPR europeu e a LGPD brasileira, que servem de referência dada a ausência de legislação específica em Moçambique). Tem direito a:</p>
+    <ul class="bullet-list">
+        <li><strong>Acesso:</strong> Solicitar uma cópia de todos os dados que temos sobre si.</li>
+        <li><strong>Retificação:</strong> Corrigir informações incorretas ou incompletas.</li>
+        <li><strong>Eliminação:</strong> Pedir a remoção dos seus dados, salvo onde existam obrigações legais de retenção.</li>
+        <li><strong>Portabilidade:</strong> Receber os seus dados num formato estruturado e legível por máquina.</li>
+        <li><strong>Oposição:</strong> Opor-se ao tratamento dos seus dados para determinadas finalidades.</li>
+        <li><strong>Retirada do Consentimento:</strong> Retirar o consentimento a qualquer momento, sem que isso afete a licitude do tratamento anterior.</li>
+    </ul>
+    <p>Para exercer qualquer um destes direitos, entre em contacto connosco através dos canais indicados abaixo. Comprometemo-nos a responder dentro de <strong>15 dias úteis</strong>.</p>
 
-    <h2>13. Seus Direitos</h2>
-    <p>De acordo com normas internacionais (GDPR/LGPD), tem direito ao acesso, retificação e eliminação dos seus dados. Para exercer estes direitos, utilize os canais de contacto abaixo.</p>
+    <h2>15. Menores de Idade</h2>
+    <p>O Gogoma não foi concebido para ser usado exclusivamente por menores de 18 anos. No entanto, compreendemos que emergências acontecem a qualquer pessoa, incluindo crianças. Se um menor se encontrar em perigo, pode e deve usar a plataforma — a segurança da vida tem prioridade sobre qualquer restrição de idade.</p>
+    <p>Não recolhemos dados de forma intencional de menores fora do contexto de emergência. Se soubermos que dados de um menor foram recolhidos sem consentimento parental fora de uma situação de emergência, procedemos à sua eliminação imediata.</p>
 
-    <h2>14. Contacte o Responsável de Dados</h2>
+    <h2>16. Alterações a Esta Política</h2>
+    <p>Podemos atualizar esta Política de Privacidade para refletir melhorias no sistema, alterações legais ou novas funcionalidades. Quando o fizermos, atualizamos a data no topo desta página e, quando as alterações forem significativas, notificamos os utilizadores ativos através da aplicação.</p>
+    <p>Recomendamos que reveja esta política periodicamente. A versão mais recente estará sempre disponível em <strong>gogoma.akademictv.co.mz/privacy</strong>.</p>
+
+    <h2>17. Reportar Vulnerabilidades ou Preocupações</h2>
+    <p>A segurança é um esforço contínuo que depende também da colaboração dos nossos utilizadores. Se encontrar algo que pareça uma falha de segurança, um dado expostos indevidamente, ou um comportamento estranho da aplicação, por favor informe-nos imediatamente.</p>
+    <p>Envie um email para <a href="mailto:akademictv@gmail.com?subject=SEGURANÇA - GOGOMA">akademictv@gmail.com</a> com o assunto "<strong>SEGURANÇA - GOGOMA</strong>". Tratamos todos os relatórios com seriedade e confidencialidade.</p>
+
+    <h2>18. Contacte o Responsável pelo Tratamento de Dados</h2>
     <div class="contact-box">
         <ul class="bullet-list">
-            <li><strong>Organização:</strong> Akademic TV</li>
-            <li><strong>Nome:</strong> Wilady Manuel Joaquim / Akademic TV</li>
+            <li><strong>Entidade Responsável:</strong> Akademic TV</li>
+            <li><strong>Responsável Principal:</strong> Wilady Manuel Joaquim</li>
             <li><strong>Email:</strong> <a href="mailto:akademictv@gmail.com">akademictv@gmail.com</a></li>
-            <li><strong>Telefone Primário:</strong> +258 82 148 1573 (Wilady Manuel Joaquim)</li>
-            <li><strong>Telefone Secundário:</strong> +258 87 464 4289 (José Horácio)</li>
-            <li><strong>Localização:</strong> Chimoio, Moçambique</li>
-            <li><strong>Horário:</strong> Segunda a Sexta, 8h - 17h</li>
+            <li><strong>Telefone Principal:</strong> <a href="tel:+258821481573">+258 82 148 1573</a> (Wilady Manuel Joaquim)</li>
+            <li><strong>Telefone Secundário:</strong> <a href="tel:+258874644289">+258 87 464 4289</a> (José Horácio)</li>
+            <li><strong>Endereço:</strong> Chimoio, Província de Manica, Moçambique</li>
+            <li><strong>Horário de Atendimento:</strong> Segunda a Sexta-feira, das 08h00 às 17h00 (hora de Moçambique)</li>
         </ul>
     </div>
-
-    <h2>15. Reportar Vulnerabilidade</h2>
-    <p>A segurança é um esforço contínuo. Encorajamos os nossos utilizadores a reportarem proativamente quaisquer potenciais vulnerabilidades. Envie um email direto para <a href="mailto:akademictv@gmail.com?subject=SEGURANÇA">akademictv@gmail.com</a> com o assunto "<strong>SEGURANÇA</strong>".</p>
 
     <div class="footer">
         <strong>Contactos Oficiais:</strong><br><br>
@@ -237,7 +317,7 @@
         Endereço: Chimoio, Moçambique<br><br>
         
         © 2026 Akademic TV. Todos os direitos reservados.<br>
-        O sistema também pertence ao Município de Chimoio (CMC).
+        Sistema desenvolvido pela equipa Akademic TV em parceria com o Município de Chimoio (CMC).
     </div>
 </body>
 </html>
