@@ -142,7 +142,8 @@
         </div>
 
         <div style="flex: 1; min-width: 300px;">
-            <form name="contacto" method="POST" data-netlify="true" action="/sucesso.html" class="contact-box" style="margin-top: 0;">
+            <form name="contacto" method="POST" data-netlify="true" class="contact-box" style="margin-top: 0;">
+                <input type="hidden" name="form-name" value="contacto" />
                 <h3 style="color: var(--primary); margin-top: 0; margin-bottom: 1.5rem;">Formulário Direto</h3>
                 <div class="form-group">
                     <label class="form-label" for="nome">Nome Completo *</label>
