@@ -328,12 +328,7 @@ const CitizenScreen: React.FC = () => {
         setSending(true);
         setErrorMsg(null);
         try {
-            // 1. Atualizar o Cooldown na Base de Dados (Segurança Real)
-            await updateDoc(doc(db, 'usuarios', profile!.phoneNumber), {
-                ultimo_pedido_sos: serverTimestamp()
-            });
-
-            // 2. Criar o documento de emergência IMEDIATAMENTE
+            // 1. Criar o documento de emergência IMEDIATAMENTE
             const sosDoc = await addDoc(collection(db, 'emergencias'), {
                 userName: profile!.name,
                 contactNumber: profile!.phoneNumber,
@@ -363,11 +358,17 @@ const CitizenScreen: React.FC = () => {
                 } // IMPORTANTE: O Alarme toca sempre no primeiro pedido!
             });
 
-            // 2. Transição visual imediata para sucesso
+            // 2. Atualizar o Cooldown na Base de Dados (Segurança Real)
+            // Agora feito APÓS o sucesso para não bloquear o próprio pedido atual
+            updateDoc(doc(db, 'usuarios', profile!.phoneNumber), {
+                ultimo_pedido_sos: serverTimestamp()
+            }).catch(err => console.error("Erro ao atualizar cooldown:", err));
+
+            // 3. Transição visual imediata para sucesso
             setStep(2);
             setLastSOSSent(Date.now());
 
-            // 3. Notificação Push SEMPRE disparada para pedidos novos
+            // 4. Notificação Push SEMPRE disparada para pedidos novos
             sendPushNotification(
                 `🚑 SOS: ${selectedType || 'Emergência'}`,
                 `${profile!.name} em ${profile!.neighborhood} precisa de ajuda!`
