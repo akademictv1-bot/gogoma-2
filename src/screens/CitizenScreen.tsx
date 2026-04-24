@@ -12,7 +12,7 @@ import AuthForm from '../components/AuthForm';
 
 import { db, storage } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getCurrentLocation, watchLocation, getAddressFromCoords } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
 import { validateMozambiquePhone } from '../services/cryptoUtils';
@@ -49,6 +49,10 @@ const CitizenScreen: React.FC = () => {
     const [lastGpsUpdate, setLastGpsUpdate] = useState<number>(Date.now());
     const [helpPhone, setHelpPhone] = useState('112');
     const [helpText, setHelpText] = useState('PEÇA SOCORRO IMEDIATO');
+    
+    // Controlo de Cooldown (Anti-Intruso)
+    const [lastSOSSent, setLastSOSSent] = useState<number>(0);
+    const COOLDOWN_MINUTES = 3;
 
     const NEON_YELLOW = "#fbff00";
 
@@ -303,15 +307,33 @@ const CitizenScreen: React.FC = () => {
         const currentAccuracy = gpsAccuracy || 999;
         const isLowAccuracy = !location || location.lat === 0 || currentAccuracy > 30;
 
-        // Enviar IMEDIATAMENTE - Ultra-rápido conforme pedido
         await sendSOSAlert(isLowAccuracy);
     };
 
     const sendSOSAlert = async (isLowAccuracy: boolean) => {
+        // 0. Verificar Cooldown Local
+        const now = Date.now();
+        const timeElapsed = now - lastSOSSent;
+        if (lastSOSSent > 0 && timeElapsed < COOLDOWN_MINUTES * 60 * 1000) {
+            const secondsRemaining = Math.ceil((COOLDOWN_MINUTES * 60 * 1000 - timeElapsed) / 1000);
+            const minutes = Math.floor(secondsRemaining / 60);
+            const seconds = secondsRemaining % 60;
+            Alert.alert(
+                "Aguarde",
+                `O seu socorro já está a caminho. Para evitar sobrecarga no sistema, aguarde ${minutes > 0 ? `${minutes}m ` : ""}${seconds}s antes de enviar outro alerta.`
+            );
+            return;
+        }
+
         setSending(true);
         setErrorMsg(null);
         try {
-            // 1. Criar o documento de emergência IMEDIATAMENTE (sem esperar as fotos)
+            // 1. Atualizar o Cooldown na Base de Dados (Segurança Real)
+            await updateDoc(doc(db, 'usuarios', profile!.phoneNumber), {
+                ultimo_pedido_sos: serverTimestamp()
+            });
+
+            // 2. Criar o documento de emergência IMEDIATAMENTE
             const sosDoc = await addDoc(collection(db, 'emergencias'), {
                 userName: profile!.name,
                 contactNumber: profile!.phoneNumber,
@@ -343,6 +365,7 @@ const CitizenScreen: React.FC = () => {
 
             // 2. Transição visual imediata para sucesso
             setStep(2);
+            setLastSOSSent(Date.now());
 
             // 3. Notificação Push SEMPRE disparada para pedidos novos
             sendPushNotification(
