@@ -131,17 +131,34 @@ const CitizenScreen: React.FC = () => {
         };
         startWatching();
 
-        return () => {
-            unsubConfig();
-            if (locationSubscription) {
-                try {
-                    locationSubscription.remove();
-                } catch (e) {
-                    console.warn('[GPS] Erro ao remover subscrição de localização:', e);
+    useEffect(() => {
+        let interval: any;
+        if (lastSOSSent > 0) {
+            interval = setInterval(() => {
+                const now = Date.now();
+                const diff = (lastSOSSent + (COOLDOWN_MINUTES * 60 * 1000)) - now;
+                if (diff <= 0) {
+                    clearInterval(interval);
+                } else {
+                    // Force re-render to update the visual timer
+                    setLastGpsUpdate(prev => prev + 1); 
                 }
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [lastSOSSent]);
+
+    return () => {
+        unsubConfig();
+        if (locationSubscription) {
+            try {
+                locationSubscription.remove();
+            } catch (e) {
+                console.warn('[GPS] Erro ao remover subscrição de localização:', e);
             }
-        };
-    }, []);
+        }
+    };
+}, [lastSOSSent]);
 
     // Função para atualizar qualidade do GPS
     const updateGpsQuality = (accuracy: number | null) => {
@@ -596,8 +613,27 @@ const CitizenScreen: React.FC = () => {
                     </View>
 
                     {/* CENTRO: SOS Button e Categorias */}
-                    <View style={tw`flex-1 items-center justify-center px-4 py-8`}> 
-                        <SOSButton onClick={handleSOS} loading={sending} />
+                    <View style={tw`flex-1 items-center justify-center px-4 py-8`}>
+                        {/* Cronómetro Visual Profissional (Estilo Bloqueio Móvel) */}
+                        {lastSOSSent > 0 && (Date.now() - lastSOSSent < COOLDOWN_MINUTES * 60 * 1000) && (
+                            <View style={[tw`flex-row items-center gap-2 px-6 py-2.5 rounded-full mb-8 border border-[#fbff0033]`, { backgroundColor: '#fbff0008' }]}>
+                                <RefreshCcw size={14} color={NEON_YELLOW} style={tw`opacity-80`} />
+                                <Text style={[tw`text-[11px] font-black uppercase tracking-widest`, { color: NEON_YELLOW }]}>
+                                    AGUARDE {(() => {
+                                        const remaining = Math.max(0, Math.ceil((lastSOSSent + (COOLDOWN_MINUTES * 60 * 1000) - Date.now()) / 1000));
+                                        const m = Math.floor(remaining / 60);
+                                        const s = remaining % 60;
+                                        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                                    })()}
+                                </Text>
+                            </View>
+                        )}
+                        
+                        <SOSButton 
+                            onClick={handleSOS} 
+                            loading={sending} 
+                            disabled={lastSOSSent > 0 && (Date.now() - lastSOSSent < COOLDOWN_MINUTES * 60 * 1000)} 
+                        />
                         
                         <View style={tw`flex-row flex-wrap justify-center gap-3 mt-8 w-full`}>
                             {[
