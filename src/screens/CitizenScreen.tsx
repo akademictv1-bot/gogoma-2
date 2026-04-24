@@ -131,6 +131,18 @@ const CitizenScreen: React.FC = () => {
         };
         startWatching();
 
+        return () => {
+            unsubConfig();
+            if (locationSubscription) {
+                try {
+                    locationSubscription.remove();
+                } catch (e) {
+                    console.warn('[GPS] Erro ao remover subscrição de localização:', e);
+                }
+            }
+        };
+    }, []);
+
     useEffect(() => {
         let interval: any;
         if (lastSOSSent > 0) {
@@ -147,18 +159,6 @@ const CitizenScreen: React.FC = () => {
         }
         return () => clearInterval(interval);
     }, [lastSOSSent]);
-
-    return () => {
-        unsubConfig();
-        if (locationSubscription) {
-            try {
-                locationSubscription.remove();
-            } catch (e) {
-                console.warn('[GPS] Erro ao remover subscrição de localização:', e);
-            }
-        }
-    };
-}, [lastSOSSent]);
 
     // Função para atualizar qualidade do GPS
     const updateGpsQuality = (accuracy: number | null) => {
