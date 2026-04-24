@@ -7,15 +7,26 @@
  */
 import CryptoJS from 'crypto-js';
 
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────
 // Constantes
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────
 
 /** Prefixos válidos para operadoras moçambicanas (Vodacom, Tmcel, Movitel) */
 const MOZAMBIQUE_PREFIXES = ['82', '83', '84', '85', '86', '87'];
 
 /** Comprimento exacto do número local (sem código do país) */
 const MOZAMBIQUE_PHONE_LENGTH = 9;
+
+/** Obter chave de ambiente - Requerida em produção */
+const getCryptoKey = (): string | undefined => {
+    return process.env.EXPO_PUBLIC_CRYPTO_KEY;
+};
+
+/** Verificar se chave está configurada */
+export const isCryptoKeyConfigured = (): boolean => {
+    const key = getCryptoKey();
+    return !!(key && key.length >= 16);
+};
 
 // ─────────────────────────────────────────────
 // Validação de Telefone
@@ -41,34 +52,47 @@ export const validateMozambiquePhone = (phone: string): boolean => {
 /**
  * Encripta um valor em texto claro usando AES-256.
  * @param plainText - Valor a encriptar
- * @param secretKey - Chave secreta (≥32 caracteres recomendado)
+ * @param secretKey - Chave secreta (≥16 caracteres)
  * @returns String encriptada (base64-encoded ciphertext)
  */
-export const encryptValue = (plainText: string, secretKey: string): string => {
-    return CryptoJS.AES.encrypt(plainText, secretKey).toString();
+export const encryptValue = (plainText: string, secretKey?: string): string => {
+    const key = secretKey || getCryptoKey();
+    if (!key) {
+        throw new Error('CRYPTO_KEY não configurada. Defina EXPO_PUBLIC_CRYPTO_KEY no .env.local');
+    }
+    return CryptoJS.AES.encrypt(plainText, key).toString();
 };
 
 /**
  * Desencripta um valor encriptado com AES-256.
  * @param cipherText - Valor encriptado (retornado por encryptValue)
  * @param secretKey - Mesma chave secreta usada na encriptação
- * @returns Texto original
+ * @returns Texto original ou string vazia se falhar
  */
-export const decryptValue = (cipherText: string, secretKey: string): string => {
-    const bytes = CryptoJS.AES.decrypt(cipherText, secretKey);
-    return bytes.toString(CryptoJS.enc.Utf8);
+export const decryptValue = (cipherText: string, secretKey?: string): string => {
+    const key = secretKey || getCryptoKey();
+    if (!key) {
+        console.warn('[cryptoUtils] CRYPTO_KEY não configurada');
+        return '';
+    }
+    try {
+        const bytes = CryptoJS.AES.decrypt(cipherText, key);
+        return bytes.toString(CryptoJS.enc.Utf8);
+    } catch {
+        return '';
+    }
 };
 
 /**
  * Encripta as credenciais universais (ID + senha).
  * @param id       - ID universal (ex: "PRM_9922")
  * @param password - Senha universal (ex: "Gogoma@2024")
- * @param secretKey - Chave secreta AES
+ * @param secretKey - Chave secreta AES (opcional - usa getCryptoKey se não passado)
  */
 export const encryptCredentials = (
     id: string,
     password: string,
-    secretKey: string
+    secretKey?: string
 ): { encryptedId: string; encryptedPassword: string } => {
     return {
         encryptedId: encryptValue(id, secretKey),
@@ -80,12 +104,12 @@ export const encryptCredentials = (
  * Desencripta as credenciais universais.
  * @param encryptedId       - ID encriptado
  * @param encryptedPassword - Senha encriptada
- * @param secretKey         - Chave secreta AES
+ * @param secretKey         - Chave secreta AES (opcional)
  */
 export const decryptCredentials = (
     encryptedId: string,
     encryptedPassword: string,
-    secretKey: string
+    secretKey?: string
 ): { id: string; password: string } => {
     return {
         id: decryptValue(encryptedId, secretKey),
@@ -102,14 +126,17 @@ export const decryptCredentials = (
  */
 export const generateFirestoreCredentials = (
     id: string,
-    password: string,
-    secretKey: string
+    password: string
 ): Record<string, string> => {
-    const { encryptedId, encryptedPassword } = encryptCredentials(id, password, secretKey);
+    const key = getCryptoKey();
+    if (!key) {
+        throw new Error('CRYPTO_KEY não configurada. Defina EXPO_PUBLIC_CRYPTO_KEY no .env.local');
+    }
+    const { encryptedId, encryptedPassword } = encryptCredentials(id, password, key);
     return {
         encryptedId,
         encryptedPassword,
         algoritmo: 'AES-256',
-        criadoEm: new Date().toISOString(), // Use serverTimestamp() se inserir via SDK admin
+        criadoEm: new Date().toISOString(),
     };
 };

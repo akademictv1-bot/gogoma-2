@@ -119,33 +119,38 @@ class AudioManager {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
-        if (alarmType === 'emergency') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(600, now);
-            osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
-            osc.frequency.exponentialRampToValueAtTime(600, now + 0.6);
-            osc.frequency.exponentialRampToValueAtTime(1200, now + 0.9);
-            osc.frequency.exponentialRampToValueAtTime(600, now + duration);
-            
-            gain.gain.setValueAtTime(0.01, now);
-            gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
-            gain.gain.linearRampToValueAtTime(0.35, now + duration - 0.1);
-            gain.gain.linearRampToValueAtTime(0.01, now + duration);
-        } else {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(440, now);
-            gain.gain.setValueAtTime(0.3, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
-        }
+        try {
+            if (alarmType === 'emergency') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+                osc.frequency.exponentialRampToValueAtTime(600, now + 0.6);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.9);
+                osc.frequency.exponentialRampToValueAtTime(600, now + duration);
+                
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
+                gain.gain.linearRampToValueAtTime(0.35, now + duration - 0.1);
+                gain.gain.linearRampToValueAtTime(0.01, now + duration);
+            } else {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, now);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+            }
 
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + duration);
-        this.activeOscillators.push(osc);
-        
-        await delay(duration * 1000);
-        this.activeOscillators = this.activeOscillators.filter(o => o !== osc);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + duration);
+            this.activeOscillators.push(osc);
+            
+            await delay(duration * 1000);
+        } finally {
+            this.activeOscillators = this.activeOscillators.filter(o => o !== osc);
+            try { osc.disconnect(); } catch (_) {}
+            try { gain.disconnect(); } catch (_) {}
+        }
     }
 
     async playSuccessSound(durationMs: number = 1000) {

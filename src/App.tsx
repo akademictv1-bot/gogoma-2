@@ -66,9 +66,17 @@ const AppContent: React.FC = () => {
                 const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
                 setAlerts(docs);
             }, (error: any) => {
-                // NOTA: Usar apenas console.error no web para evitar notificações/alertas nativos do sistema
-                // Alert.alert no web usa window.alert que o Safari mostra como notificação do macOS
-                console.error("[Sync] Erro no Firestore:", error.message);
+                // Silencia erros conhecidos no web:
+                // - permission-denied: regras de segurança (normal antes do login)
+                // - failed-precondition: índice em criação (temporário)
+                // Nenhum alert nativo aqui — no Safari/macOS aparece como notificação do SO
+                const isKnown = error?.code === 'permission-denied' ||
+                    error?.code === 'failed-precondition' ||
+                    error?.message?.includes('Missing or insufficient permissions') ||
+                    error?.message?.includes('requires an index');
+                if (!isKnown) {
+                    console.error("[Sync] Erro no Firestore:", error.message);
+                }
             });
 
             return () => {

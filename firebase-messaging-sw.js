@@ -1,5 +1,10 @@
-// Scripts do Firebase dentro do Service Worker
-// Scripts do Firebase dentro do Service Worker
+// Service Worker Firebase Messaging — GOGOMA Web Command Panel
+//
+// IMPORTANTE: O painel web usa alarme sonoro interno (AudioManager).
+// Notificações nativas do SO (macOS, Windows) são DESATIVADAS intencionalmente
+// para não criar pop-ups na área de notificações do computador do operador.
+// As notificações push nativas só fazem sentido na app móvel (iOS/Android).
+
 importScripts('https://www.gstatic.com/firebasejs/12.9.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/12.9.0/firebase-messaging-compat.js');
 
@@ -16,19 +21,16 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
-  if (payload.notification) {
-    const notificationTitle = payload.notification.title;
-    const notificationOptions = {
-      body: payload.notification.body,
-      icon: payload.notification.icon || '/icon.png',
-      vibrate: [200, 100, 200],
-      data: payload.data
-    };
-    self.registration.showNotification(notificationTitle, notificationOptions);
-  }
+// Mensagens em background são recebidas mas NÃO mostradas como notificações do SO.
+// O AlarmMonitor no painel deteta novas emergências via Firestore em tempo real
+// e toca o alarme sonoro interno — sem popups no macOS/Windows.
+messaging.onBackgroundMessage((_payload) => {
+  // Silenciosamente ignorado — sem notificações nativas no web
+  return;
 });
 
+// Handler de clique mantido por compatibilidade, mas não será acionado
+// pois as notificações não são mostradas.
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
   event.waitUntil(

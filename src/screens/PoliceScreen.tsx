@@ -11,7 +11,7 @@ import { EmergencyAlert, AlertStatus } from '../types';
 import { audioManager } from '../services/AudioManager';
 import { alarmMonitor } from '../services/AlarmMonitor';
 import { healthCheck } from '../services/HealthCheckSystem';
-import { decryptValue } from '../services/cryptoUtils';
+import { decryptValue, isCryptoKeyConfigured } from '../services/cryptoUtils';
 import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
 import { saveUserSession, getUserSession } from '../services/storage';
 
@@ -198,6 +198,9 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     // Função para tocar som de alerta de emergência movida para alarmService
 
     useEffect(() => {
+        // Só subscreve às configurações DEPOIS do login — antes da autenticidade as regras bloqueiam
+        if (!isAuthenticated) return;
+
         const docRef = doc(db, 'configuracoes', 'geral');
         const unsub = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) {
@@ -206,9 +209,16 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                 if (data.helpPhone) setHelpPhone(data.helpPhone);
                 if (data.helpText) setHelpText(data.helpText);
             }
+        }, (err: any) => {
+            // Erro de permissão é ignorado silenciosamente
+            const isPermission = err?.code === 'permission-denied' ||
+                err?.message?.includes('Missing or insufficient permissions');
+            if (!isPermission) {
+                console.error('[Configs] Erro:', err?.message);
+            }
         });
         return unsub;
-    }, []);
+    }, [isAuthenticated]);
 
     const downloadCSV = () => {
         const historyAlerts = alerts.filter(a => a.status === AlertStatus.RESOLVED);
@@ -316,7 +326,10 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
     }, [alerts]);
 
     useEffect(() => {
-        if (isAuthenticated) {
+        // Notificações push nativas APENAS para mobile (iOS/Android)
+        // No web o painel usa alarme sonoro interno — notificações do SO não são usadas
+        // e causam pop-ups indesejados no macOS/Windows do operador
+        if (isAuthenticated && Platform.OS !== 'web') {
             registerForPushNotificationsAsync().then(token => {
                 if (token) saveOperatorToken(badgeId, token);
             });
@@ -352,7 +365,10 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                         <TouchableOpacity
                             onPress={handleLogin}
                             disabled={loadingCreds}
-                            style={tw`w-full bg-red-600 py-5 rounded-2xl items-center shadow-xl ${loadingCreds ? 'opacity-50' : ''}`}
+                            style={[
+                                tw`w-full bg-red-600 py-5 rounded-2xl items-center shadow-xl`,
+                                loadingCreds ? tw`opacity-50` : null
+                            ]}
                         >
                             <Text style={tw`text-white font-black uppercase text-xs`}>
                                 {loadingCreds ? 'VERIFICANDO SERVIDOR...' : 'ENTRAR NO COMANDO'}

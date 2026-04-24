@@ -56,8 +56,14 @@ class AlarmMonitor {
         while (this.isRunning) {
             try {
                 await this.checkGlobalAlarmState();
-            } catch (err) {
-                console.error('[AlarmMonitor] Erro no ciclo:', err);
+            } catch (err: any) {
+                // Erros de permissão são ignorados silenciosamente —
+                // acontecem se o operador ainda não fez login ou as regras mudam
+                const isPermission = err?.code === 'permission-denied' ||
+                    err?.message?.includes('Missing or insufficient permissions');
+                if (!isPermission) {
+                    console.error('[AlarmMonitor] Erro no ciclo:', err?.message ?? err);
+                }
             }
             await delay(this.monitorInterval);
         }
