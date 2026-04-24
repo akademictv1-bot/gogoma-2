@@ -14,14 +14,22 @@
             --text-dim: #4b5563;
         }
         body { 
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 14pt;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            font-size: 16px;
             line-height: 1.6; 
             color: var(--text); 
             max-width: 900px; 
             margin: 0 auto; 
-            padding: 40px 2cm; 
+            padding: 2rem; 
             background-color: var(--bg); 
+        }
+        @media (max-width: 640px) {
+            body { padding: 1.5rem; font-size: 15px; }
+            h1 { font-size: 1.8rem; }
+            h2 { font-size: 1.25rem; margin-top: 2rem; }
+            .contact-box { padding: 1.5rem; }
+            div[style*="display: flex"] { gap: 1rem !important; }
+            div[style*="min-width: 300px"] { min-width: 100% !important; }
         }
         @media print {
             body { padding: 0; background-color: #FFF; color: #000; }

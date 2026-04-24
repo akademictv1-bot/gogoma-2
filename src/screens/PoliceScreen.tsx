@@ -389,21 +389,21 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                 </View>
 
                 {Platform.OS === 'web' && (
-                    <View style={tw`absolute bottom-0 w-full p-4 border-t border-white/5 bg-[#0a0a0c]`}>
-                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
-                            <Text style={tw`text-slate-400 text-xs text-center`}>Contactar: akademictv@gmail.com</Text>
-                            <Text style={tw`text-slate-400 text-xs text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
-                            <Text style={tw`text-slate-400 text-xs text-center`}>Endereço: Chimoio, Moçambique</Text>
+                    <View style={tw`absolute bottom-0 w-full p-6 border-t border-white/5 bg-[#0a0a0c]`}>
+                        <View style={tw`flex-col md:flex-row justify-center items-center gap-x-8 gap-y-2 mb-6 px-4`}>
+                            <Text style={tw`text-slate-400 text-[10px] text-center`}>Contactar: akademictv@gmail.com</Text>
+                            <Text style={tw`text-slate-400 text-[10px] text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
+                            <Text style={tw`text-slate-400 text-[10px] text-center`}>Endereço: Chimoio, Moçambique</Text>
                         </View>
-                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-4 gap-y-2 mb-2`}>
-                            <TouchableOpacity onPress={() => window.location.href='/privacy.html'}>
-                                <Text style={tw`text-[#fbff00] text-xs underline`}>Política de Privacidade</Text>
+                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-6 gap-y-4 mb-6 px-4`}>
+                            <TouchableOpacity onPress={() => window.location.href='/privacy.html'} style={tw`px-2 py-1`}>
+                                <Text style={tw`text-[#fbff00] text-[10px] underline font-bold uppercase tracking-tighter`}>Política de Privacidade</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => window.location.href='/terms.html'}>
-                                <Text style={tw`text-[#fbff00] text-xs underline`}>Termos de Uso</Text>
+                            <TouchableOpacity onPress={() => window.location.href='/terms.html'} style={tw`px-2 py-1`}>
+                                <Text style={tw`text-[#fbff00] text-[10px] underline font-bold uppercase tracking-tighter`}>Termos de Uso</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity onPress={() => window.location.href='/contactos.html'}>
-                                <Text style={tw`text-[#fbff00] text-xs underline`}>Contactos</Text>
+                            <TouchableOpacity onPress={() => window.location.href='/contactos.html'} style={tw`px-2 py-1`}>
+                                <Text style={tw`text-[#fbff00] text-[10px] underline font-bold uppercase tracking-tighter`}>Contactos</Text>
                             </TouchableOpacity>
                         </View>
                         <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
