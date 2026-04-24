@@ -482,10 +482,13 @@ const CitizenScreen: React.FC = () => {
 
 
 
+
+                {/* Spacer/Push para o rodapé ficar no fundo absoluto do ecrã */}
+                <View style={tw`flex-1 min-h-[150px]`} />
+
                 {Platform.OS === 'web' && (
-                    <>
-                        <View style={tw`mt-32 pt-12 border-t border-white/5 pb-16`}>
-                            <View style={tw`flex-row justify-center items-center flex-wrap gap-x-8 gap-y-4 mb-6`}>
+                    <View style={tw`mt-auto pt-24 border-t border-white/5 pb-32`}>
+                        <View style={tw`flex-row justify-center items-center flex-wrap gap-x-8 gap-y-4 mb-6`}>
                             <Text style={tw`text-slate-400 text-xs text-center`}>Contactar: akademictv@gmail.com</Text>
                             <Text style={tw`text-slate-400 text-xs text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
                             <Text style={tw`text-slate-400 text-xs text-center`}>Endereço: Chimoio, Moçambique</Text>
@@ -508,7 +511,6 @@ const CitizenScreen: React.FC = () => {
                             O sistema também pertence ao Município de Chimoio (CMC).
                         </Text>
                     </View>
-                    </>
                 )}
 
             </ScrollView>
