@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, KeyboardAvoidingView, Dimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import { Image } from 'expo-image';
-import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, ArrowLeft, Camera, X } from 'lucide-react-native';
+import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, Camera, X } from 'lucide-react-native';
 import tw from 'twrnc';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
@@ -10,8 +10,10 @@ import Header from '../components/Header';
 import SOSButton from '../components/SOSButton';
 import AuthForm from '../components/AuthForm';
 
-import { db, storage } from '../services/firebase';
+import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+import { db, storage, auth, firebaseConfig } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
 import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getCurrentLocation, watchLocation, getAddressFromCoords } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
@@ -23,13 +25,17 @@ import { EmergencyType, AlertStatus, UserProfile } from '../types';
 const CitizenScreen: React.FC = () => {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isRegistered, setIsRegistered] = useState(false);
-    const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
+    const [authMode, setAuthMode] = useState<'register' | 'login' | 'verification'>('register');
     const [municipioLogo, setMunicipioLogo] = useState("https://upload.wikimedia.org/wikipedia/commons/4/4b/Bras%C3%A3o_de_Chimoio.png");
 
     const [regName, setRegName] = useState('');
     const [regPhone, setRegPhone] = useState('');
     const [regCity, setRegCity] = useState('');
     const [regNeighborhood, setRegNeighborhood] = useState('');
+    const [smsCode, setSmsCode] = useState<string>('');
+    const [confirmationResult, setConfirmationResult] = useState<any | null>(null);
+    const recaptchaVerifierModalRef = useRef<any>(null);
+    const pendingAuthMode = useRef<'register' | 'login'>('register');
 
     const [description, setDescription] = useState('');
     const [selectedType, setSelectedType] = useState<EmergencyType | null>(null);
@@ -52,7 +58,9 @@ const CitizenScreen: React.FC = () => {
     
     // Controlo de Cooldown (Anti-Intruso)
     const [lastSOSSent, setLastSOSSent] = useState<number>(0);
+    const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
     const COOLDOWN_MINUTES = 3;
+    const COOLDOWN_TOTAL_MS = COOLDOWN_MINUTES * 60 * 1000;
 
     const NEON_YELLOW = "#fbff00";
 
@@ -144,19 +152,20 @@ const CitizenScreen: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        let interval: any;
-        if (lastSOSSent > 0) {
-            interval = setInterval(() => {
-                const now = Date.now();
-                const diff = (lastSOSSent + (COOLDOWN_MINUTES * 60 * 1000)) - now;
-                if (diff <= 0) {
-                    clearInterval(interval);
-                } else {
-                    // Force re-render to update the visual timer
-                    setLastGpsUpdate(prev => prev + 1); 
-                }
-            }, 1000);
+        if (lastSOSSent <= 0) {
+            setCooldownSeconds(0);
+            return;
         }
+        const tick = () => {
+            const remaining = Math.max(0, Math.ceil((lastSOSSent + COOLDOWN_TOTAL_MS - Date.now()) / 1000));
+            setCooldownSeconds(remaining);
+            if (remaining <= 0) {
+                // Cooldown terminou — volta ao ecrã principal automaticamente
+                setStep(0);
+            }
+        };
+        tick(); // executa imediatamente
+        const interval = setInterval(tick, 1000);
         return () => clearInterval(interval);
     }, [lastSOSSent]);
 
@@ -178,8 +187,32 @@ const CitizenScreen: React.FC = () => {
         }
     };
 
-    const handleAuth = async () => {
-        if (!regName.trim()) {
+    const recaptchaId = useRef(`recaptcha-${Date.now()}`).current;
+
+    const initRecaptcha = () => {
+        if (Platform.OS === 'web') {
+            try {
+                if ((window as any).recaptchaVerifier) {
+                    try {
+                        (window as any).recaptchaVerifier.clear();
+                    } catch(e) {}
+                    (window as any).recaptchaVerifier = null;
+                }
+                
+                const el = document.getElementById(recaptchaId);
+                if (el) el.innerHTML = ''; // Garante que a div está totalmente limpa
+                
+                (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, recaptchaId, {
+                    'size': 'invisible'
+                });
+            } catch (err) {
+                console.error("Erro ao inicializar reCAPTCHA", err);
+            }
+        }
+    };
+
+    const requestSMS = async () => {
+        if (authMode === 'register' && !regName.trim()) {
             setErrorMsg("O nome é obrigatório.");
             return;
         }
@@ -196,73 +229,126 @@ const CitizenScreen: React.FC = () => {
 
         setWorking(true);
         setErrorMsg(null);
+        
         try {
-            let finalProfile: UserProfile;
-
-            const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T> => {
-                let timeoutHandle: any;
-                const timeoutPromise = new Promise<T>((_, reject) => {
-                    timeoutHandle = setTimeout(() => reject(new Error('TIMEOUT_ERROR')), timeoutMs);
-                });
-                return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
-            };
-
+            // Verificar pré-requisitos no Firestore antes de enviar o SMS
+            const userDoc = await getDoc(doc(db, 'usuarios', regPhone));
+            
             if (authMode === 'register') {
-                if (!regCity.trim() || !regNeighborhood.trim()) {
-                    throw new Error("Cidade e Bairro são obrigatórios.");
-                }
-
-                // Verificar existente com timeout
-                const userDoc = await withTimeout(getDoc(doc(db, 'usuarios', regPhone)));
+                if (!regCity.trim() || !regNeighborhood.trim()) throw new Error("Cidade e Bairro são obrigatórios.");
                 if (userDoc.exists()) throw new Error('Este número de telemóvel já está cadastrado.');
-
-                const q = query(collection(db, 'usuarios'), where('name', '==', regName));
-                const qs = await withTimeout(getDocs(q));
-                if (!qs.empty) throw new Error('Este nome já está em uso.');
-
-                finalProfile = { name: regName, phoneNumber: regPhone, city: regCity, neighborhood: regNeighborhood };
                 
-                try {
-                     await withTimeout(setDoc(doc(db, 'usuarios', regPhone), { ...finalProfile, dataRegisto: Date.now() }));
-                     // "Conta criada com sucesso! Dados sincronizados." happen implicitly, could Toast it
-                } catch (saveErr: any) {
-                     if (saveErr.message === 'TIMEOUT_ERROR') {
-                         // A criação de conta pode ficar pendente localmente (Firebase cache), mas para ser seguro mostramos q não acabou ainda.
-                         throw saveErr; 
-                     } else {
-                         throw saveErr;
-                     }
-                }
+                const q = query(collection(db, 'usuarios'), where('name', '==', regName));
+                const qs = await getDocs(q);
+                if (!qs.empty) throw new Error('Este nome já está em uso.');
             } else {
-                const userDoc = await withTimeout(getDoc(doc(db, 'usuarios', regPhone)));
-                if (!userDoc.exists()) {
-                    throw new Error("Telefone não encontrado. Por favor, registe-se.");
-                }
-                const user = userDoc.data() as UserProfile;
-                if (user.name.toLowerCase().trim() !== regName.toLowerCase().trim()) {
-                    throw new Error("O nome não corresponde ao número de telemóvel.");
-                }
-                finalProfile = user;
+                if (!userDoc.exists()) throw new Error("Telefone não encontrado. Por favor, registe-se.");
             }
+
+            // Enviar SMS
+            if (Platform.OS === 'web') {
+                initRecaptcha();
+                const appVerifier = (window as any).recaptchaVerifier;
+                const formattedPhone = regPhone.startsWith('+258') ? regPhone : `+258${regPhone}`;
+                const confResult = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
+                setConfirmationResult(confResult);
+            } else {
+                // Celular (iOS/Android) usando expo-firebase-recaptcha
+                const formattedPhone = regPhone.startsWith('+258') ? regPhone : `+258${regPhone}`;
+                const confResult = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifierModalRef.current);
+                setConfirmationResult(confResult);
+            }
+            
+            pendingAuthMode.current = authMode as 'register' | 'login';
+            setSmsCode('');
+            setAuthMode('verification');
+        } catch (err: any) {
+            console.error("Auth Request Error:", err);
+            let friendlyError = "Ocorreu um erro no sistema. Por favor, tente novamente.";
+            
+            if (err.message) {
+                const msg = err.message.toLowerCase();
+                
+                // Nossos próprios erros manuais
+                if (msg.includes('obrigatório') || msg.includes('cadastrado') || msg.includes('uso') || msg.includes('encontrado')) {
+                    friendlyError = err.message;
+                } 
+                // Erros do Firebase transformados
+                else if (msg.includes('too-many-requests')) {
+                    friendlyError = "Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.";
+                } else if (msg.includes('invalid-phone-number')) {
+                    friendlyError = "O número fornecido é inválido. Verifique se tem 9 dígitos.";
+                } else if (msg.includes('network-request-failed') || msg.includes('offline')) {
+                    friendlyError = "Sem ligação à internet. Verifique a sua rede.";
+                } else if (msg.includes('invalid-app-credential') || msg.includes('recaptcha')) {
+                    friendlyError = "Falha na verificação de segurança. Por favor, atualize a página e tente novamente.";
+                } else if (msg.includes('billing')) {
+                    friendlyError = "Serviço de SMS indisponível no momento. Contacte a equipa técnica.";
+                }
+            }
+            setErrorMsg(friendlyError);
+        } finally {
+            setWorking(false);
+        }
+    };
+
+    const verifySMS = async () => {
+        if (!smsCode || smsCode.length < 6) {
+            setErrorMsg("Insira o código de 6 dígitos.");
+            return;
+        }
+
+        setWorking(true);
+        setErrorMsg(null);
+        try {
+            if (!confirmationResult) throw new Error("Sessão de verificação inválida. Por favor, solicite um novo código.");
+            await confirmationResult.confirm(smsCode);
+
+            // Sucesso na verificação! Salvar/Carregar perfil.
+            let finalProfile: UserProfile;
+            
+            if (pendingAuthMode.current === 'login') {
+                // Foi login — carrega o perfil existente
+                const userDoc = await getDoc(doc(db, 'usuarios', regPhone));
+                finalProfile = userDoc.data() as UserProfile;
+            } else {
+                // Foi registo — cria o perfil novo
+                finalProfile = { name: regName, phoneNumber: regPhone, city: regCity, neighborhood: regNeighborhood };
+                await setDoc(doc(db, 'usuarios', regPhone), { ...finalProfile, dataRegisto: Date.now() });
+            }
+
             await saveUserSession('gogoma_user_profile', finalProfile);
             setProfile(finalProfile);
             setIsRegistered(true);
         } catch (err: any) {
-            if (err.message === 'TIMEOUT_ERROR') {
-                 setErrorMsg("Sua rede não está disponível. Verifique sua conexão e tente novamente.");
-            } else if (err.message && (
-                err.message.includes('obrigatório') || 
-                err.message.includes('cadastrado') || 
-                err.message.includes('uso') || 
-                err.message.includes('encontrado') || 
-                err.message.includes('corresponde')
-            )) {
-                setErrorMsg(err.message);
-            } else {
-                setErrorMsg(authMode === 'register' ? "Falha ao criar conta. Tente novamente em alguns segundos." : "Algo deu errado. Verifique sua conexão de internet e tente novamente.");
+            console.error("Verify SMS Error:", err);
+            let friendlyError = "Falha na verificação do código. Tente novamente.";
+            
+            if (err.message) {
+                const msg = err.message.toLowerCase();
+                if (msg.includes('invalid-verification-code')) {
+                    friendlyError = "O código SMS que inseriu está incorreto.";
+                } else if (msg.includes('code-expired')) {
+                    friendlyError = "O código SMS expirou. Por favor, solicite um novo código.";
+                } else if (msg.includes('sessão') || msg.includes('inválida')) {
+                    friendlyError = err.message;
+                } else if (msg.includes('network')) {
+                    friendlyError = "Sem ligação à internet. Verifique a sua rede.";
+                } else {
+                    friendlyError = "Ocorreu um problema ao validar. Por favor, tente novamente.";
+                }
             }
+            setErrorMsg(friendlyError);
         } finally {
             setWorking(false);
+        }
+    };
+
+    const handleAuth = () => {
+        if (authMode === 'verification') {
+            verifySMS();
+        } else {
+            requestSMS();
         }
     };
 
@@ -499,14 +585,16 @@ const CitizenScreen: React.FC = () => {
                     <Text style={tw`text-slate-500 text-[10px] font-black mt-3 uppercase tracking-[0.4em] opacity-60 text-center`}>Moçambique Digital • Governo Municipal</Text>
                 </View>
 
-                <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
-                    <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
-                        <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
-                        <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
-                    </TouchableOpacity>
-                </View>
+                {authMode !== 'verification' && (
+                    <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
+                        <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
+                            <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
+                            <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 <AuthForm
                     mode={authMode}
@@ -517,12 +605,21 @@ const CitizenScreen: React.FC = () => {
                         name: regName, setName: setRegName,
                         phone: regPhone, setPhone: setRegPhone,
                         city: regCity, setCity: setRegCity,
-                        neighborhood: regNeighborhood, setNeighborhood: setRegNeighborhood
+                        neighborhood: regNeighborhood, setNeighborhood: setRegNeighborhood,
+                        smsCode: smsCode, setSmsCode: setSmsCode
                     }}
+                    onResendSms={requestSMS}
                 />
 
+                <View nativeID={recaptchaId} />
 
-
+                {Platform.OS !== 'web' && (
+                    <FirebaseRecaptchaVerifierModal
+                        ref={recaptchaVerifierModalRef}
+                        firebaseConfig={firebaseConfig}
+                        attemptInvisibleVerification={true}
+                    />
+                )}
 
                 {/* Spacer/Push para o rodapé ficar no fundo absoluto do ecrã */}
                 <View style={tw`flex-1 min-h-[150px]`} />
@@ -559,17 +656,81 @@ const CitizenScreen: React.FC = () => {
     }
 
     if (step === 2) {
+        const totalSecs = COOLDOWN_MINUTES * 60;
+        const progress = cooldownSeconds / totalSecs; // 1.0 → 0.0
+        const mins = Math.floor(cooldownSeconds / 60);
+        const secs = cooldownSeconds % 60;
+        const timerLabel = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+        // Cores que mudam conforme o tempo passa: amarelo → laranja → verde
+        const timerColor = cooldownSeconds > 120 ? NEON_YELLOW
+            : cooldownSeconds > 60 ? '#fb923c'
+            : '#22c55e';
+
         return (
-            <View style={tw`flex-1 items-center justify-center bg-[#050507] p-8`}>
-                <View style={[tw`bg-green-600 rounded-[40px] p-10 mb-8 shadow-xl`, { shadowColor: '#16a34a', shadowOpacity: 0.3, shadowRadius: 25 }]}>
-                    <CheckCircle size={80} color="white" />
+            <View style={tw`flex-1 bg-[#050507]`}>
+                {/* Cabeçalho fixo */}
+                <View style={[tw`pt-16 pb-6 px-8 items-center border-b border-white/5`, { backgroundColor: '#050507' }]}>
+                    <View style={[tw`w-16 h-16 rounded-[18px] items-center justify-center mb-4`, { backgroundColor: '#16a34a22', borderWidth: 1.5, borderColor: '#16a34a55' }]}>
+                        <CheckCircle size={32} color="#22c55e" />
+                    </View>
+                    <Text style={tw`text-white text-xl font-black uppercase tracking-tighter text-center`}>SOS ENVIADO COM SUCESSO</Text>
+                    <Text style={tw`text-slate-500 text-xs mt-1 text-center uppercase tracking-widest`}>A POLÍCIA MUNICIPAL FOI NOTIFICADA</Text>
                 </View>
-                <Text style={tw`text-4xl font-black uppercase tracking-tighter text-green-500 text-center`}>SOS ENVIADO!</Text>
-                <Text style={tw`text-slate-400 text-sm mt-4 text-center leading-relaxed font-bold`}>A polícia municipal recebeu o seu alerta.{"\n"}Mantenha a calma e aguarde no local se possível.</Text>
-                <TouchableOpacity onPress={() => { setStep(0); setSelectedType(null); setDescription(''); }} style={tw`mt-12 flex-row items-center gap-3 bg-[#0d0d10] px-10 py-5 rounded-full border border-white/5`}>
-                    <RefreshCcw size={16} color="white" />
-                    <Text style={tw`text-white font-black uppercase text-[10px]`}>NOVO ALERTA</Text>
-                </TouchableOpacity>
+
+                {/* Corpo principal — contador estilo bloqueio de PIN */}
+                <View style={tw`flex-1 items-center justify-center px-8`}>
+
+                    {/* Anel de progresso visual */}
+                    <View style={[tw`w-56 h-56 rounded-full items-center justify-center mb-8`, {
+                        borderWidth: 6,
+                        borderColor: timerColor + '33',
+                        backgroundColor: timerColor + '08',
+                        shadowColor: timerColor,
+                        shadowOpacity: 0.25,
+                        shadowRadius: 40,
+                        shadowOffset: { width: 0, height: 0 },
+                    }]}>
+                        {/* Anel interior mais brilhante */}
+                        <View style={[tw`w-44 h-44 rounded-full items-center justify-center`, {
+                            borderWidth: 2,
+                            borderColor: timerColor + '55',
+                        }]}>
+                            <Text style={[tw`font-black text-center`, {
+                                fontSize: 52,
+                                letterSpacing: 2,
+                                color: timerColor,
+                                fontVariant: ['tabular-nums'],
+                            }]}>{timerLabel}</Text>
+                            <Text style={[tw`text-[9px] font-black uppercase tracking-[0.3em] mt-1`, { color: timerColor + 'aa' }]}>PRÓXIMO ALERTA</Text>
+                        </View>
+                    </View>
+
+                    {/* Barra de progresso linear */}
+                    <View style={tw`w-full h-1.5 bg-white/5 rounded-full mb-10 overflow-hidden`}>
+                        <View style={[tw`h-full rounded-full`, {
+                            width: `${progress * 100}%`,
+                            backgroundColor: timerColor,
+                            opacity: 0.7,
+                        }]} />
+                    </View>
+
+                    {/* Mensagem explicativa */}
+                    <View style={[tw`w-full p-5 rounded-3xl border`, { backgroundColor: '#0d0d10', borderColor: '#ffffff0d' }]}>
+                        <Text style={tw`text-slate-300 text-[13px] font-bold text-center leading-6`}>
+                            O seu pedido de socorro está a ser processado.{"\n"}Para evitar sobrecarga no sistema, aguarde o contador antes de enviar um novo alerta.
+                        </Text>
+                    </View>
+
+                    {/* Botão para voltar ao ecrã principal (sem enviar novo SOS) */}
+                    <TouchableOpacity
+                        onPress={() => { setStep(0); setSelectedType(null); setDescription(''); }}
+                        style={[tw`mt-6 flex-row items-center gap-3 px-10 py-4 rounded-full border border-white/10`, { backgroundColor: '#0d0d10' }]}
+                    >
+                        <RefreshCcw size={14} color="#475569" />
+                        <Text style={tw`text-slate-500 font-black uppercase text-[10px] tracking-widest`}>VOLTAR AO INÍCIO</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         );
     }
@@ -614,17 +775,12 @@ const CitizenScreen: React.FC = () => {
 
                     {/* CENTRO: SOS Button e Categorias */}
                     <View style={tw`flex-1 items-center justify-center px-4 py-8`}>
-                        {/* Cronómetro Visual Profissional (Estilo Bloqueio Móvel) */}
-                        {lastSOSSent > 0 && (Date.now() - lastSOSSent < COOLDOWN_MINUTES * 60 * 1000) && (
+                        {/* Cronómetro — visível no ecrã principal se o utilizador voltou antes de terminar */}
+                        {cooldownSeconds > 0 && (
                             <View style={[tw`flex-row items-center gap-2 px-6 py-2.5 rounded-full mb-8 border border-[#fbff0033]`, { backgroundColor: '#fbff0008' }]}>
                                 <RefreshCcw size={14} color={NEON_YELLOW} style={tw`opacity-80`} />
                                 <Text style={[tw`text-[11px] font-black uppercase tracking-widest`, { color: NEON_YELLOW }]}>
-                                    AGUARDE {(() => {
-                                        const remaining = Math.max(0, Math.ceil((lastSOSSent + (COOLDOWN_MINUTES * 60 * 1000) - Date.now()) / 1000));
-                                        const m = Math.floor(remaining / 60);
-                                        const s = remaining % 60;
-                                        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-                                    })()}
+                                    AGUARDE {`${Math.floor(cooldownSeconds / 60).toString().padStart(2, '0')}:${(cooldownSeconds % 60).toString().padStart(2, '0')}`}
                                 </Text>
                             </View>
                         )}
@@ -632,7 +788,7 @@ const CitizenScreen: React.FC = () => {
                         <SOSButton 
                             onClick={handleSOS} 
                             loading={sending} 
-                            disabled={lastSOSSent > 0 && (Date.now() - lastSOSSent < COOLDOWN_MINUTES * 60 * 1000)} 
+                            disabled={cooldownSeconds > 0} 
                         />
                         
                         <View style={tw`flex-row flex-wrap justify-center gap-3 mt-8 w-full`}>
