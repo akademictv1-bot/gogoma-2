@@ -27,17 +27,17 @@
         "backgroundColor": "#050507"
       },
       "package": "com.gogoma",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE",
+        "INTERNET",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "FOREGROUND_SERVICE",
-        "INTERNET",
         "CAMERA",
         "RECORD_AUDIO",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "WAKE_LOCK"
       ]
     },
     "plugins": [
@@ -54,7 +54,9 @@
       [
         "expo-av",
         {}
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth"
     ],
     "web": {
       "favicon": "./src/assets/favicon.png"

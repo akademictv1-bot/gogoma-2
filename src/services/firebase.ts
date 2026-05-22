@@ -1,8 +1,14 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth as getAuthJS } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
+
+// Importação condicional para evitar erro no Web
+let authNative: any;
+if (Platform.OS !== 'web') {
+    authNative = require('@react-native-firebase/auth').default;
+}
 
 export const firebaseConfig = {
     apiKey: Platform.select({
@@ -24,14 +30,17 @@ export const firebaseConfig = {
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-        tabManager: persistentMultipleTabManager()
-    })
+    localCache: persistentLocalCache(
+        Platform.OS === 'web' 
+            ? { tabManager: persistentMultipleTabManager() } 
+            : {}
+    )
 });
 
 const storage = getStorage(app);
 
-const auth = getAuth(app);
+// Exporta o Auth correto para cada plataforma
+const auth = Platform.OS === 'web' ? getAuthJS(app) : authNative();
 
 export { db, storage, auth };
 export default app;

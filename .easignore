@@ -1,0 +1,9 @@
+node_modules
+.expo
+.git
+dist
+web-build
+build
+# Ignorar arquivos de mídia pesados se não forem estritamente necessários no bundle nativo
+*.mp4
+*.zip

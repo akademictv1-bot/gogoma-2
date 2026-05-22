@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Platform, AppState } from 'react-native';
 import { Image } from 'expo-image';
-import { Download, Trash2, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, Settings, WifiOff } from 'lucide-react-native';
+import { Download, Trash2, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, Settings, WifiOff, CloudOff } from 'lucide-react-native';
 import tw from 'twrnc';
 import { Animated } from 'react-native';
 
@@ -19,9 +19,10 @@ import Header from '../components/Header';
 
 interface PoliceScreenProps {
     alerts: EmergencyAlert[];
+    isOnline?: boolean;
 }
 
-const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
+const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) => {
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [badgeId, setBadgeId] = useState('');
@@ -452,6 +453,16 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts }) => {
                     </View>
                 }
             />
+
+            {!isOnline && (
+                <View style={tw`bg-red-600 p-4 items-center flex-row justify-center gap-3 border-b border-white/10`}>
+                    <CloudOff size={20} color="white" />
+                    <View>
+                        <Text style={tw`text-white text-xs font-black uppercase tracking-widest`}>CENTRAL DESCONECTADA</Text>
+                        <Text style={tw`text-white/80 text-[8px] font-bold uppercase`}>Você não receberá novos alertas até restabelecer a conexão.</Text>
+                    </View>
+                </View>
+            )}
 
             <View style={tw`flex-row bg-[#0d0d10] border-b border-white/5`}>
                 <TouchableOpacity onPress={() => setActiveTab('pending')} style={[tw`flex-1 py-5 items-center relative`, activeTab === 'pending' && tw`border-b-2 border-red-600 bg-red-600/5`]}>

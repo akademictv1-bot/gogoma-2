@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import { Image } from 'expo-image';
-import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, Camera, X } from 'lucide-react-native';
+import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, CloudOff, Camera, X } from 'lucide-react-native';
 import tw from 'twrnc';
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
@@ -10,7 +10,7 @@ import Header from '../components/Header';
 import SOSButton from '../components/SOSButton';
 import AuthForm from '../components/AuthForm';
 
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
+
 import { db, storage, auth, firebaseConfig } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
@@ -22,7 +22,11 @@ import { sendPushNotification } from '../services/notificationService';
 
 import { EmergencyType, AlertStatus, UserProfile } from '../types';
 
-const CitizenScreen: React.FC = () => {
+interface CitizenScreenProps {
+    isOnline?: boolean;
+}
+
+const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isRegistered, setIsRegistered] = useState(false);
     const [authMode, setAuthMode] = useState<'register' | 'login' | 'verification'>('register');
@@ -34,7 +38,7 @@ const CitizenScreen: React.FC = () => {
     const [regNeighborhood, setRegNeighborhood] = useState('');
     const [smsCode, setSmsCode] = useState<string>('');
     const [confirmationResult, setConfirmationResult] = useState<any | null>(null);
-    const recaptchaVerifierModalRef = useRef<any>(null);
+
     const pendingAuthMode = useRef<'register' | 'login'>('register');
 
     const [description, setDescription] = useState('');
@@ -221,10 +225,9 @@ const CitizenScreen: React.FC = () => {
             return;
         }
 
-        const netState = await NetInfo.fetch();
-        if (!netState.isConnected) {
-            setErrorMsg("Não foi possível conectar. Por favor, ligue sua internet e tente novamente.");
-            return;
+        if (!isOnline) {
+            console.warn("Aviso: O sistema reporta que o dispositivo pode estar offline.");
+            // Não bloqueamos mais o usuário aqui para garantir que, se houver rede, o app funcione.
         }
 
         setWorking(true);
@@ -253,10 +256,11 @@ const CitizenScreen: React.FC = () => {
                 const confResult = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
                 setConfirmationResult(confResult);
             } else {
-                // Celular (iOS/Android) usando expo-firebase-recaptcha
+                // Celular (iOS/Android) usando Firebase Nativo
                 const formattedPhone = regPhone.startsWith('+258') ? regPhone : `+258${regPhone}`;
-                const confResult = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifierModalRef.current);
-                setConfirmationResult(confResult);
+                // No Nativo, o signInWithPhoneNumber do @react-native-firebase/auth retorna o confirmationResult diretamente
+                const confirmation = await auth.signInWithPhoneNumber(formattedPhone);
+                setConfirmationResult(confirmation);
             }
             
             pendingAuthMode.current = authMode as 'register' | 'login';
@@ -613,13 +617,7 @@ const CitizenScreen: React.FC = () => {
 
                 <View nativeID={recaptchaId} />
 
-                {Platform.OS !== 'web' && (
-                    <FirebaseRecaptchaVerifierModal
-                        ref={recaptchaVerifierModalRef}
-                        firebaseConfig={firebaseConfig}
-                        attemptInvisibleVerification={true}
-                    />
-                )}
+
 
                 {/* Spacer/Push para o rodapé ficar no fundo absoluto do ecrã */}
                 <View style={tw`flex-1 min-h-[150px]`} />
@@ -769,6 +767,13 @@ const CitizenScreen: React.FC = () => {
                             <View style={tw`bg-red-600/20 border border-red-600/40 p-2 rounded-xl flex-row items-center justify-center gap-2`}>
                                 <WifiOff size={12} color="#ef4444" />
                                 <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>GPS BLOQUEADO. ATIVE NAS CONFIGURAÇÕES.</Text>
+                            </View>
+                        )}
+
+                        {!isOnline && (
+                            <View style={tw`mt-2 bg-red-600/20 border border-red-600/40 px-3 py-1.5 rounded-full flex-row items-center gap-2`}>
+                                <CloudOff size={10} color="#ef4444" />
+                                <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>Sem Ligação: Alerta será enviado assim que houver rede</Text>
                             </View>
                         )}
                     </View>

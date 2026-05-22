@@ -1,7 +1,8 @@
 import React, { useState, useEffect, Component } from 'react';
 import { View, TouchableOpacity, Text, SafeAreaView, StatusBar } from 'react-native';
-import { Smartphone, Siren, Wifi, WifiOff } from 'lucide-react-native';
+import { Smartphone, Siren, Wifi, WifiOff, CloudOff } from 'lucide-react-native';
 import tw from 'twrnc';
+import NetInfo from '@react-native-community/netinfo';
 
 import CitizenScreen from './screens/CitizenScreen';
 import PoliceScreen from './screens/PoliceScreen';
@@ -53,6 +54,12 @@ const AppContent: React.FC = () => {
         }, 3000);
 
         try {
+            // Monitoramento de Conexão Real (NetInfo)
+            const unsubscribeNet = NetInfo.addEventListener(state => {
+                const online = !!state.isConnected && !!state.isInternetReachable;
+                setIsOnline(online);
+            });
+
             // O usuário mencionou lidar com mais de 1000 pedidos. 
             // Para manter a performance elite, limitamos a 1000, o que já é massivo para um painel.
             // Alertas resolvidos muito antigos são ignorados para economizar memória/banda.
@@ -82,6 +89,7 @@ const AppContent: React.FC = () => {
             return () => {
                 clearTimeout(timer);
                 unsubscribe();
+                unsubscribeNet();
             };
         } catch (error) {
             console.error("Effect error:", error);
@@ -105,6 +113,13 @@ const AppContent: React.FC = () => {
                 <Text style={tw`text-[10px] text-slate-500 font-black tracking-[0.3em] uppercase mb-1`}>RESPOSTA DE EMERGÊNCIA</Text>
                 <Text style={tw`text-[12px] text-white font-black uppercase tracking-[0.1em]`}>Município de Chimoio</Text>
                 <Text style={tw`text-[8px] text-slate-700 font-bold uppercase mt-10`}>Toque para saltar</Text>
+                
+                {!isOnline && (
+                    <View style={tw`absolute bottom-20 flex-row items-center gap-2 bg-red-600/20 px-4 py-2 rounded-full border border-red-600/40`}>
+                        <WifiOff size={12} color="#ef4444" />
+                        <Text style={tw`text-red-500 text-[10px] font-black uppercase`}>Sem Internet</Text>
+                    </View>
+                )}
             </TouchableOpacity>
         );
     }
@@ -143,11 +158,18 @@ const AppContent: React.FC = () => {
                 </View>
             </View>
 
+            {!isOnline && (
+                <View style={tw`bg-red-600 p-2 items-center flex-row justify-center gap-2`}>
+                    <CloudOff size={14} color="white" />
+                    <Text style={tw`text-white text-[10px] font-black uppercase tracking-widest`}>Você está offline. Algumas funções podem estar limitadas.</Text>
+                </View>
+            )}
+
             <View style={tw`flex-1`}>
                 {viewMode === 'citizen' ? (
-                    <CitizenScreen />
+                    <CitizenScreen isOnline={isOnline} />
                 ) : (
-                    <PoliceScreen alerts={alerts} />
+                    <PoliceScreen alerts={alerts} isOnline={isOnline} />
                 )}
             </View>
 
