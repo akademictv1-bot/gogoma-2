@@ -29,11 +29,12 @@ export interface EmergencyAlert {
     id: string;
     type: EmergencyType;
     location: GeoLocation;
-    timestamp: number; // timestamp_criacao
+    timestamp: number;
     status: AlertStatus;
     description?: string;
     contactNumber: string;
     userName?: string;
+    numeroPessoas?: number;
     aiAdvice?: string;
     manualAddress?: string;
     province?: string;

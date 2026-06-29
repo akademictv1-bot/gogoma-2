@@ -11,7 +11,7 @@ import { EmergencyAlert, AlertStatus } from '../types';
 import { audioManager } from '../services/AudioManager';
 import { alarmMonitor } from '../services/AlarmMonitor';
 import { healthCheck } from '../services/HealthCheckSystem';
-import { decryptValue, isCryptoKeyConfigured } from '../services/cryptoUtils';
+import { decryptValue, hashValue, isCryptoKeyConfigured } from '../services/cryptoUtils';
 import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
 import { saveUserSession, getUserSession } from '../services/storage';
 
@@ -29,6 +29,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
     const [password, setPassword] = useState('');
     const [authError, setAuthError] = useState(false);
     const [selectedAlert, setSelectedAlert] = useState<EmergencyAlert | null>(null);
+    const [previousAlertsCount, setPreviousAlertsCount] = useState(0);
     const [activeTab, setActiveTab] = useState<'pending' | 'resolved'>('pending');
     const [showConfig, setShowConfig] = useState(false);
     const [newLogoUrl, setNewLogoUrl] = useState('');
@@ -62,16 +63,25 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                 setLoadingCreds(false);
             }
 
-            // 2. Tentar buscar do Firestore (atualiza cache se tiver internet)
+            // 2. Tentar buscar do Firestore
             const docRef = doc(db, 'comando_universal', 'credenciais');
             const credSnap = await getDoc(docRef);
 
             if (credSnap.exists()) {
                 const data = credSnap.data();
+
+                // —— NOVO: verificar se já foi migrado para SHA-256 (passwordHash) ——
+                if (data.passwordHash) {
+                    // Sistema migrado: usar hash SHA-256 diretamente
+                    await saveUserSession('gogoma_cmd_pwd_cache', data.passwordHash);
+                    setDbPassword(data.passwordHash);
+                    return;
+                }
+
+                // —— LEGADO: desencriptar AES (antes da migração) ——
                 const secretKey = process.env.EXPO_PUBLIC_CRYPTO_KEY;
 
                 if (!secretKey) {
-                    // Chave não encontrada no ambiente - usar cache se disponível
                     if (!cachedPwd) {
                         Alert.alert("Erro de Sistema", "Contacte o administrador do sistema.");
                     }
@@ -88,10 +98,10 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                 try {
                     const decryptedPassword = decryptValue(data.encryptedPassword, secretKey);
                     if (!decryptedPassword) throw new Error("Desencriptação falhou");
-
-                    // Guardar no cache para acesso offline futuro
-                    await saveUserSession('gogoma_cmd_pwd_cache', decryptedPassword);
-                    setDbPassword(decryptedPassword);
+                    // Guardar hash SHA-256 no cache (não a senha em texto claro)
+                    const passwordHashLegacy = hashValue(decryptedPassword);
+                    await saveUserSession('gogoma_cmd_pwd_cache', passwordHashLegacy);
+                    setDbPassword(passwordHashLegacy);
                 } catch (decError) {
                     if (!cachedPwd) {
                         Alert.alert("Erro de Segurança", "Não foi possível validar as chaves. Verifique a sua ligação.");
@@ -108,7 +118,6 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
             if (!cachedPwd) {
                 Alert.alert("Sem Ligação", "Sem internet e sem dados guardados. Ligue-se à rede e tente novamente.");
             }
-            // Se tem cache, não mostra erro nenhum — o sistema funciona offline
         } finally {
             setLoadingCreds(false);
         }
@@ -132,22 +141,30 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
             return;
         }
 
-        const officialId = process.env.EXPO_PUBLIC_COMMAND_ID;
-        if (!dbPassword || !officialId) {
+        if (!dbPassword) {
             Alert.alert("Rede Indisponível", "Ligue-se à internet para validar o seu acesso ao Comando.");
             return;
         }
 
-        if (badgeId.trim() === officialId && password === dbPassword) {
+        // Comparar o hash SHA-256 do input com o hash armazenado (sem expor segredos)
+        const inputPasswordHash = hashValue(password);
+        const inputBadgeHash    = hashValue(badgeId.trim());
+
+        // dbPassword pode ser um hash SHA-256 (sistema novo) ou texto legado
+        // Suporte duplo durante transição:
+        const officialId = process.env.EXPO_PUBLIC_COMMAND_ID;
+        const passwordMatch =
+            inputPasswordHash === dbPassword || // Sistema novo (hash)
+            password === dbPassword;            // Sistema legado (plaintext no cache)
+        const badgeMatch =
+            officialId ? badgeId.trim() === officialId : true;
+
+        if (passwordMatch && badgeMatch) {
             setIsAuthenticated(true);
             setAuthError(false);
             
             // ATIVAÇÃO DE ÁUDIO NO PRIMEIRO CLIQUE (ESSENCIAL PARA NAVEGADORES)
             audioManager.resumeContext().catch(e => console.error("Erro ao iniciar áudio:", e));
-
-            // Iniciar Monitoramento Robusto e Health Check
-            alarmMonitor.start();
-            healthCheck.start();
         } else {
             setAuthError(true);
             setPassword('');
@@ -196,8 +213,26 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
         }
     };
 
-    // Função para tocar som de alerta de emergência movida para alarmService
+    // Verificar dados dos alertas (numeroPessoas, etc.)
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        healthCheck.checkAlertsData(alerts);
+    }, [alerts, isAuthenticated]);
 
+    // Lógica Clássica de Som: Quando um pedido NOVO entra, toca instantaneamente!
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        
+        const currentNewAlerts = alerts.filter(a => a.status === AlertStatus.NEW);
+        
+        // Se há mais pedidos novos do que havia antes (um novo pedido entrou)
+        // ou se acabou de fazer login e já existem pedidos novos
+        if (currentNewAlerts.length > previousAlertsCount && currentNewAlerts.length > 0) {
+            audioManager.playSound('emergency').catch(e => console.error(e));
+        }
+        
+        setPreviousAlertsCount(currentNewAlerts.length);
+    }, [alerts, isAuthenticated, previousAlertsCount]);
     useEffect(() => {
         // Só subscreve às configurações DEPOIS do login — antes da autenticidade as regras bloqueiam
         if (!isAuthenticated) return;
@@ -301,13 +336,15 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
         }
     };
 
-    // Parar alarmes quando o utilizador faz logout
+    // Gerir o ciclo de vida dos alarmes consoante a autenticação e a presença na aba
     useEffect(() => {
         if (!isAuthenticated) {
             audioManager.stopAllAlarms();
-            alarmMonitor.stop();
-            return;
         }
+
+        return () => {
+            audioManager.stopAllAlarms();
+        };
     }, [isAuthenticated]);
 
     const filteredAlerts = React.useMemo(() => {
@@ -316,15 +353,19 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
             .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     }, [alerts, activeTab]);
 
-    // Fechar modal se o pedido for apagado externamente
+    // Sincronizar selectedAlert com os dados mais recentes (ex: imagens que acabaram de fazer upload)
     useEffect(() => {
         if (selectedAlert) {
-            const exists = alerts.find(a => a.id === selectedAlert.id);
-            if (!exists) {
+            const currentAlert = alerts.find(a => a.id === selectedAlert.id);
+            if (!currentAlert) {
+                // Se foi apagado, fecha o modal
                 setSelectedAlert(null);
+            } else if (JSON.stringify(currentAlert) !== JSON.stringify(selectedAlert)) {
+                // Se houve mudanças (ex: as imagens chegaram), atualiza o estado do modal
+                setSelectedAlert(currentAlert);
             }
         }
-    }, [alerts]);
+    }, [alerts, selectedAlert]);
 
     useEffect(() => {
         // Notificações push nativas APENAS para mobile (iOS/Android)
@@ -394,7 +435,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                         <View style={tw`flex-col md:flex-row justify-center items-center gap-x-8 gap-y-2 mb-6 px-4`}>
                             <Text style={tw`text-slate-400 text-[10px] text-center`}>Contactar: akademictv@gmail.com</Text>
                             <Text style={tw`text-slate-400 text-[10px] text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
-                            <Text style={tw`text-slate-400 text-[10px] text-center`}>Endereço: Chimoio, Moçambique</Text>
+                            <Text style={tw`text-slate-400 text-[10px] text-center`}>Endereço: Moçambique</Text>
                         </View>
                         <View style={tw`flex-row justify-center items-center flex-wrap gap-x-6 gap-y-4 mb-6 px-4`}>
                             <TouchableOpacity onPress={() => window.location.href='/privacy.html'} style={tw`px-2 py-1`}>
@@ -410,9 +451,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                         <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
                             © 2026 Akademic TV. Todos os direitos reservados.
                         </Text>
-                        <Text style={tw`text-slate-500 text-[10px] text-center`}>
-                            O sistema também pertence ao Município de Chimoio (CMC).
-                        </Text>
+
                     </View>
                 )}
             </View>
@@ -555,6 +594,14 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                             <TouchableOpacity onPress={() => Linking.openURL(`tel:${selectedAlert?.contactNumber}`)}>
                                 <Text style={tw`text-blue-500 font-bold text-xl mb-6`}>{selectedAlert?.contactNumber}</Text>
                             </TouchableOpacity>
+                            {selectedAlert?.numeroPessoas && (
+                                <View style={tw`flex-row items-center gap-2 mb-6 bg-amber-500/10 border border-amber-500/30 px-4 py-3 rounded-2xl`}>
+                                    <Text style={tw`text-amber-400 font-black text-base`}>{selectedAlert.numeroPessoas}</Text>
+                                    <Text style={tw`text-amber-400/80 text-[10px] font-black uppercase tracking-wider`}>
+                                        {selectedAlert.numeroPessoas === 1 ? 'PESSOA ENVOLVIDA' : 'PESSOAS ENVOLVIDAS'}
+                                    </Text>
+                                </View>
+                            )}
                             <View style={tw`p-6 bg-black/40 rounded-2xl border border-white/5`}>
                                 <Text style={tw`italic text-white/80 leading-relaxed text-sm font-bold`}>"{selectedAlert?.description || "Sem detalhes adicionais."}"</Text>
                             </View>
@@ -670,13 +717,18 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                             </View>
                             <TouchableOpacity
                                 onPress={async () => {
-                                    const docRef = doc(db, 'configuracoes', 'geral');
-                                    await setDoc(docRef, {
-                                        logoUrl: newLogoUrl,
-                                        helpPhone: helpPhone,
-                                        helpText: helpText
-                                    }, { merge: true });
-                                    setShowConfig(false);
+                                    try {
+                                        const docRef = doc(db, 'configuracoes', 'geral');
+                                        await setDoc(docRef, {
+                                            logoUrl: newLogoUrl,
+                                            helpPhone: helpPhone,
+                                            helpText: helpText
+                                        }, { merge: true });
+                                        setShowConfig(false);
+                                        Alert.alert('Sucesso', 'Configurações atualizadas no servidor.');
+                                    } catch (err: any) {
+                                        Alert.alert('Erro', 'Sem permissão para alterar configurações ou sem internet.');
+                                    }
                                 }}
                                 style={tw`w-full py-6 bg-[#fbff00] rounded-3xl items-center shadow-2xl border-b-4 border-black/20`}
                             >

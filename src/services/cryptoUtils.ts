@@ -1,9 +1,10 @@
 /**
  * cryptoUtils.ts
- * Utilitários de criptografia AES-256 e validação de números de Moçambique.
+ * Utilitários de criptografia e validação para o sistema GOGOMA.
  *
- * ATENÇÃO: A chave secreta NUNCA deve ser hardcoded em produção.
- * Use a variável de ambiente: EXPO_PUBLIC_CRYPTO_KEY
+ * - hashValue(): SHA-256 sem chave secreta — seguro para autenticação web/mobile
+ * - encryptValue()/decryptValue(): AES-256 para dados em trânsito (uso interno)
+ * - validateMozambiquePhone(): validação de números moçambicanos
  */
 import CryptoJS from 'crypto-js';
 
@@ -26,6 +27,21 @@ const getCryptoKey = (): string | undefined => {
 export const isCryptoKeyConfigured = (): boolean => {
     const key = getCryptoKey();
     return !!(key && key.length >= 16);
+};
+
+// ─────────────────────────────────────────────
+// Hashing SHA-256 (Autenticação Segura)
+// ─────────────────────────────────────────────
+
+/**
+ * Gera um hash SHA-256 de um valor.
+ * Não requer chave secreta — seguro para usar na Web sem exposição.
+ * Usado para verificar credenciais do Comando (badgeId e password).
+ * @param value - Valor a transformar em hash
+ * @returns String hexadecimal do hash SHA-256
+ */
+export const hashValue = (value: string): string => {
+    return CryptoJS.SHA256(value).toString(CryptoJS.enc.Hex);
 };
 
 // ─────────────────────────────────────────────

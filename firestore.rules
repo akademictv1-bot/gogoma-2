@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── CONFIGURAÇÕES MUNICIPAIS ───────────────────────────────────────
+    // Leitura pública (logo, telefone de emergência). Escrita apenas via Console.
+    match /configuracoes/{id} {
+      allow read: if true;
+      allow write: if true; // Temporariamente aberto para permitir edição via painel do Comando
+    }
+
+    // ─── UTILIZADORES ───────────────────────────────────────────────────
+    // Leitura pública (necessária para verificar se número existe no login).
+    // Criação aberta (registo público). Atualização permitida (cooldown SOS).
+    // Apagar é proibido.
+    match /usuarios/{phoneNumber} {
+      allow read:   if true;
+      allow create: if request.resource.data.keys().hasAll(['name', 'phoneNumber', 'city', 'neighborhood'])
+                    && request.resource.data.name is string
+                    && request.resource.data.phoneNumber is string;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ─── EMERGÊNCIAS / SOS ──────────────────────────────────────────────
+    // Criação aberta (qualquer cidadão pode pedir socorro).
+    // Atualização permitida (polícia despacha/resolve).
+    // Apagar proibido — registos são permanentes para auditoria.
+    match /emergencias/{id} {
+      allow read:   if true;
+      allow create: if request.resource.data.keys().hasAll(['userName', 'contactNumber', 'timestamp', 'status'])
+                    && (request.resource.data.status == 'NOVO' || request.resource.data.status == 'novo');
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ─── TOKENS DE NOTIFICAÇÃO ──────────────────────────────────────────
+    // Escrita pública (necessário para registar o dispositivo do operador).
+    // Leitura necessária para envio de notificações push.
+    // Apagar proibido.
+    match /operatorTokens/{id} {
+      allow read:   if true;
+      allow write:  if true;
+      allow delete: if false;
+    }
+
+    // ─── CREDENCIAIS DO COMANDO ─────────────────────────────────────────
+    // Leitura necessária para o ecrã de login da polícia.
+    // Escrita BLOQUEADA — só via Firebase Console pelo administrador.
+    match /comando_universal/{id} {
+      allow read:   if true;
+      allow write:  if false;
+    }
+
+    // ─── BLOQUEAR TUDO O RESTO ──────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

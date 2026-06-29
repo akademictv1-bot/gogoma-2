@@ -30,7 +30,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isRegistered, setIsRegistered] = useState(false);
     const [authMode, setAuthMode] = useState<'register' | 'login' | 'verification'>('register');
-    const [municipioLogo, setMunicipioLogo] = useState("https://upload.wikimedia.org/wikipedia/commons/4/4b/Bras%C3%A3o_de_Chimoio.png");
+    const [municipioLogo, setMunicipioLogo] = useState("");
 
     const [regName, setRegName] = useState('');
     const [regPhone, setRegPhone] = useState('');
@@ -60,6 +60,9 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     const [helpPhone, setHelpPhone] = useState('112');
     const [helpText, setHelpText] = useState('PEÇA SOCORRO IMEDIATO');
     
+    const [numeroPessoas, setNumeroPessoas] = useState<number>(1);
+    const recaptchaVerifierRef = useRef<any>(null);
+
     // Controlo de Cooldown (Anti-Intruso)
     const [lastSOSSent, setLastSOSSent] = useState<number>(0);
     const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
@@ -156,6 +159,29 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     }, []);
 
     useEffect(() => {
+        if (Platform.OS === 'web') {
+            try {
+                if (recaptchaVerifierRef.current) {
+                    try { recaptchaVerifierRef.current.clear(); } catch (_) {}
+                }
+                const el = document.getElementById(recaptchaId);
+                if (el) el.innerHTML = '';
+                recaptchaVerifierRef.current = new RecaptchaVerifier(auth, recaptchaId, {
+                    size: 'invisible'
+                });
+            } catch (err) {
+                console.error("Erro ao inicializar reCAPTCHA", err);
+            }
+        }
+        return () => {
+            if (recaptchaVerifierRef.current) {
+                try { recaptchaVerifierRef.current.clear(); } catch (_) {}
+                recaptchaVerifierRef.current = null;
+            }
+        };
+    }, []);
+
+    useEffect(() => {
         if (lastSOSSent <= 0) {
             setCooldownSeconds(0);
             return;
@@ -193,26 +219,12 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
 
     const recaptchaId = useRef(`recaptcha-${Date.now()}`).current;
 
-    const initRecaptcha = () => {
-        if (Platform.OS === 'web') {
-            try {
-                if ((window as any).recaptchaVerifier) {
-                    try {
-                        (window as any).recaptchaVerifier.clear();
-                    } catch(e) {}
-                    (window as any).recaptchaVerifier = null;
-                }
-                
-                const el = document.getElementById(recaptchaId);
-                if (el) el.innerHTML = ''; // Garante que a div está totalmente limpa
-                
-                (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, recaptchaId, {
-                    'size': 'invisible'
-                });
-            } catch (err) {
-                console.error("Erro ao inicializar reCAPTCHA", err);
-            }
+    const getRecaptchaVerifier = () => {
+        if (Platform.OS !== 'web') return null;
+        if (!recaptchaVerifierRef.current) {
+            console.warn("reCAPTCHA não foi inicializado no useEffect");
         }
+        return recaptchaVerifierRef.current;
     };
 
     const requestSMS = async () => {
@@ -250,8 +262,8 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
 
             // Enviar SMS
             if (Platform.OS === 'web') {
-                initRecaptcha();
-                const appVerifier = (window as any).recaptchaVerifier;
+                const appVerifier = getRecaptchaVerifier();
+                if (!appVerifier) throw new Error("reCAPTCHA não disponível. Atualize a página.");
                 const formattedPhone = regPhone.startsWith('+258') ? regPhone : `+258${regPhone}`;
                 const confResult = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
                 setConfirmationResult(confResult);
@@ -270,25 +282,28 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
             console.error("Auth Request Error:", err);
             let friendlyError = "Ocorreu um erro no sistema. Por favor, tente novamente.";
             
-            if (err.message) {
-                const msg = err.message.toLowerCase();
-                
-                // Nossos próprios erros manuais
-                if (msg.includes('obrigatório') || msg.includes('cadastrado') || msg.includes('uso') || msg.includes('encontrado')) {
-                    friendlyError = err.message;
-                } 
-                // Erros do Firebase transformados
-                else if (msg.includes('too-many-requests')) {
-                    friendlyError = "Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.";
-                } else if (msg.includes('invalid-phone-number')) {
-                    friendlyError = "O número fornecido é inválido. Verifique se tem 9 dígitos.";
-                } else if (msg.includes('network-request-failed') || msg.includes('offline')) {
-                    friendlyError = "Sem ligação à internet. Verifique a sua rede.";
-                } else if (msg.includes('invalid-app-credential') || msg.includes('recaptcha')) {
-                    friendlyError = "Falha na verificação de segurança. Por favor, atualize a página e tente novamente.";
-                } else if (msg.includes('billing')) {
-                    friendlyError = "Serviço de SMS indisponível no momento. Contacte a equipa técnica.";
-                }
+            const msg = (err.message || '').toLowerCase();
+            const code = (err.code || '').toLowerCase();
+            
+            // Nossos próprios erros manuais
+            if (msg.includes('obrigatório') || msg.includes('cadastrado') || msg.includes('uso') || msg.includes('encontrado')) {
+                friendlyError = err.message;
+            } else if (msg.includes('recaptcha')) {
+                friendlyError = "Falha na verificação de segurança. Por favor, atualize a página e tente novamente.";
+            }
+            // Erros do Firebase (message + code)
+            else if (msg.includes('too-many-requests') || code.includes('too-many-requests')) {
+                friendlyError = "Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.";
+            } else if (msg.includes('invalid-phone-number') || code.includes('invalid-phone-number')) {
+                friendlyError = "O número fornecido é inválido. Verifique se tem 9 dígitos.";
+            } else if (msg.includes('network-request-failed') || msg.includes('offline') || code.includes('network-request-failed')) {
+                friendlyError = "Sem ligação à internet. Verifique a sua rede.";
+            } else if (code.includes('invalid-app-credential') || msg.includes('invalid-app-credential')) {
+                friendlyError = "Falha na verificação de segurança das credenciais. Verifique a configuração da aplicação (SHA-256 ou APNs) no Firebase Console.";
+            } else if (msg.includes('billing') || code.includes('billing') || code.includes('quota-exceeded')) {
+                friendlyError = "Serviço de SMS indisponível no momento. Contacte a equipa técnica.";
+            } else if (code.includes('operation-not-allowed')) {
+                friendlyError = "Autenticação por telefone não ativada. Contacte o administrador.";
             }
             setErrorMsg(friendlyError);
         } finally {
@@ -449,6 +464,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                 type: selectedType || EmergencyType.GENERAL,
                 neighborhood: profile!.neighborhood,
                 manualAddress: `${profile!.city}, ${profile!.neighborhood}`,
+                numeroPessoas: numeroPessoas,
                 timestamp: Date.now(),
                 status: AlertStatus.NEW,
                 dataAtualizacao: Date.now(),
@@ -580,54 +596,50 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
 
     if (!isRegistered) {
         return (
-            <ScrollView contentContainerStyle={tw`flex-grow bg-[#050507] p-6`} keyboardShouldPersistTaps="handled">
-                <View style={tw`items-center mb-6 pt-4`}>
-                    <View style={[tw`w-32 h-32 bg-white/5 p-4 rounded-[32px] mb-6 border-2 border-[#fbff0022] backdrop-blur-xl items-center justify-center`, { shadowColor: NEON_YELLOW, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.15, shadowRadius: 30 }]}>
-                        <Image source={{ uri: municipioLogo }} style={[tw`w-[85%] h-[85%]`]} contentFit="contain" transition={200} />
+            <View style={tw`flex-1 bg-[#050507]`}>
+                <ScrollView contentContainerStyle={tw`flex-grow p-6`} keyboardShouldPersistTaps="handled">
+                    <View style={tw`items-center mb-6 pt-4`}>
+                        <View style={[tw`w-32 h-32 bg-white/5 p-4 rounded-[32px] mb-6 border-2 border-[#fbff0022] backdrop-blur-xl items-center justify-center`, { shadowColor: NEON_YELLOW, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.15, shadowRadius: 30 }]}>
+                            <Image source={{ uri: municipioLogo }} style={[tw`w-[85%] h-[85%]`]} contentFit="contain" transition={200} />
+                        </View>
+                        <Text style={[tw`text-4xl font-black uppercase tracking-tighter text-center`, { color: NEON_YELLOW, textShadowColor: `${NEON_YELLOW}44`, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 30 }]}>PORTAL{"\n"}CIDADÃO</Text>
                     </View>
-                    <Text style={[tw`text-4xl font-black uppercase tracking-tighter text-center`, { color: NEON_YELLOW, textShadowColor: `${NEON_YELLOW}44`, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 30 }]}>PORTAL{"\n"}CIDADÃO</Text>
-                    <Text style={tw`text-slate-500 text-[10px] font-black mt-3 uppercase tracking-[0.4em] opacity-60 text-center`}>Moçambique Digital • Governo Municipal</Text>
-                </View>
 
-                {authMode !== 'verification' && (
-                    <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
-                        <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
-                            <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
-                            <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
-                        </TouchableOpacity>
-                    </View>
-                )}
+                    {authMode !== 'verification' && (
+                        <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
+                            <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
+                                <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
+                                <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
 
-                <AuthForm
-                    mode={authMode}
-                    working={working}
-                    onSubmit={handleAuth}
-                    errorMsg={errorMsg}
-                    fields={{
-                        name: regName, setName: setRegName,
-                        phone: regPhone, setPhone: setRegPhone,
-                        city: regCity, setCity: setRegCity,
-                        neighborhood: regNeighborhood, setNeighborhood: setRegNeighborhood,
-                        smsCode: smsCode, setSmsCode: setSmsCode
-                    }}
-                    onResendSms={requestSMS}
-                />
+                    <AuthForm
+                        mode={authMode}
+                        working={working}
+                        onSubmit={handleAuth}
+                        errorMsg={errorMsg}
+                        fields={{
+                            name: regName, setName: setRegName,
+                            phone: regPhone, setPhone: setRegPhone,
+                            city: regCity, setCity: setRegCity,
+                            neighborhood: regNeighborhood, setNeighborhood: setRegNeighborhood,
+                            smsCode: smsCode, setSmsCode: setSmsCode
+                        }}
+                        onResendSms={requestSMS}
+                    />
 
-                <View nativeID={recaptchaId} />
+                    {/* Spacer/Push para o rodapé ficar no fundo absoluto do ecrã */}
+                    <View style={tw`flex-1 min-h-[150px]`} />
 
-
-
-                {/* Spacer/Push para o rodapé ficar no fundo absoluto do ecrã */}
-                <View style={tw`flex-1 min-h-[150px]`} />
-
-                {Platform.OS === 'web' && (
+                    {Platform.OS === 'web' && (
                         <View style={tw`mt-auto pt-24 border-t border-white/5 pb-32`}>
                             <View style={tw`flex-col md:flex-row justify-center items-center gap-x-8 gap-y-3 mb-6 px-4`}>
                                 <Text style={tw`text-slate-400 text-[11px] text-center`}>Contactar: akademictv@gmail.com</Text>
                                 <Text style={tw`text-slate-400 text-[11px] text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
-                                <Text style={tw`text-slate-400 text-[11px] text-center`}>Endereço: Chimoio, Moçambique</Text>
+                                <Text style={tw`text-slate-400 text-[11px] text-center`}>Endereço: Moçambique</Text>
                             </View>
                             <View style={tw`flex-row justify-center items-center flex-wrap gap-x-6 gap-y-4 mb-8 px-4`}>
                                 <TouchableOpacity onPress={() => window.location.href='/privacy.html'} style={tw`px-2 py-1`}>
@@ -640,16 +652,16 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                                     <Text style={tw`text-[#fbff00] text-xs underline font-bold uppercase tracking-tighter`}>Contactos</Text>
                                 </TouchableOpacity>
                             </View>
-                        <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
-                            © 2026 Akademic TV. Todos os direitos reservados.
-                        </Text>
-                        <Text style={tw`text-slate-500 text-[10px] text-center`}>
-                            O sistema também pertence ao Município de Chimoio (CMC).
-                        </Text>
-                    </View>
-                )}
+                            <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
+                                © 2026 Akademic TV. Todos os direitos reservados.
+                            </Text>
 
-            </ScrollView>
+                        </View>
+                    )}
+
+                </ScrollView>
+                <View nativeID={recaptchaId} />
+            </View>
         );
     }
 
@@ -820,6 +832,26 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                     {/* BASE: Detalhes e Fotos */}
                     <View style={tw`px-4 w-full`}>
                         <View style={tw`p-5 bg-[#0d0d10] border border-white/10 rounded-3xl`}>
+                            {/* Número de Pessoas */}
+                            <View style={tw`flex-row items-center justify-between mb-4 px-2`}>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/40 tracking-widest`}>PESSOAS ENVOLVIDAS</Text>
+                                <View style={tw`flex-row items-center gap-4`}>
+                                    <TouchableOpacity
+                                        onPress={() => setNumeroPessoas(Math.max(1, numeroPessoas - 1))}
+                                        style={tw`w-9 h-9 rounded-full bg-white/10 items-center justify-center border border-white/10`}
+                                    >
+                                        <Text style={tw`text-white font-black text-lg`}>-</Text>
+                                    </TouchableOpacity>
+                                    <Text style={tw`text-white font-black text-xl min-w-[24px] text-center`}>{numeroPessoas}</Text>
+                                    <TouchableOpacity
+                                        onPress={() => setNumeroPessoas(Math.min(99, numeroPessoas + 1))}
+                                        style={tw`w-9 h-9 rounded-full bg-white/10 items-center justify-center border border-white/10`}
+                                    >
+                                        <Text style={tw`text-white font-black text-lg`}>+</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
                             {selectedImages.length > 0 && (
                                 <View style={tw`flex-row gap-3 mb-3`}>
                                     {selectedImages.map((uri, idx) => (

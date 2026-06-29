@@ -1,4 +1,5 @@
 import { collection, doc, getDoc, getDocs, query, limit, where } from 'firebase/firestore';
+import { EmergencyAlert } from '../types';
 import { db } from './firebase';
 import { audioManager } from './AudioManager';
 import { alarmMonitor } from './AlarmMonitor';
@@ -19,6 +20,7 @@ export interface SystemStatus {
     cpu_usage: number;
     memory_usage: number;
     network_latency: number;
+    alerts_without_people: number;
 }
 
 export interface ErrorLogEntry {
@@ -58,7 +60,8 @@ class HealthCheckSystem {
             last_error: '',
             cpu_usage: 0,
             memory_usage: 0,
-            network_latency: 0
+            network_latency: 0,
+            alerts_without_people: 0
         };
     }
 
@@ -198,8 +201,21 @@ class HealthCheckSystem {
     public getStatusColor(): string {
         const s = this.systemStatus;
         if (!s.firebase_connection || !s.database_accessibility) return '#ef4444';
+        if (!s.audio_manager_active || !s.alarm_monitor_active) return '#ef4444';
+        if (s.queue_length > 1000) return '#ef4444';
         if (s.network_latency > 1000) return '#fbbf24';
+        if (s.memory_usage > 90) return '#fbbf24';
+        if (s.alerts_without_people > 0) return '#fbbf24';
         return '#22c55e';
+    }
+
+    public checkAlertsData(alerts: EmergencyAlert[]) {
+        const withoutPeople = alerts.filter(a => !a.numeroPessoas || a.numeroPessoas < 1);
+        this.systemStatus.alerts_without_people = withoutPeople.length;
+
+        if (withoutPeople.length > 0) {
+            this._log('ALERTS_MISSING_PEOPLE', `${withoutPeople.length} alertas sem número de pessoas`, 'medium');
+        }
     }
 }
 

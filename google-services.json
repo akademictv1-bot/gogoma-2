@@ -13,7 +13,20 @@
           "package_name": "com.gogoma"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "50833835620-km3f88rrr2bm0uveb6l5jj4jtstdua4q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gogoma",
+            "certificate_hash": "e4782c0d3148190167b6097761fd8aa57b2ae9ea"
+          }
+        },
+        {
+          "client_id": "50833835620-6pjjd34aa40tfh6sslhno04cq81sfg6l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCMMt-uvTjolWtHOVPdbfJ0_rwMndzt10I"
@@ -21,7 +34,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "50833835620-6pjjd34aa40tfh6sslhno04cq81sfg6l.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "50833835620-u3pqopqcllnvsqccpbci8rrsn01em9kg.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "gogoma"
+              }
+            }
+          ]
         }
       }
     }

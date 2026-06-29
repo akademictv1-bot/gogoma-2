@@ -9,9 +9,8 @@ import PoliceScreen from './screens/PoliceScreen';
 
 import { db } from './services/firebase';
 
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, limit } from 'firebase/firestore';
 import { EmergencyAlert, AlertStatus } from './types';
-
 interface EBProps {
     children: React.ReactNode;
 }
@@ -60,17 +59,18 @@ const AppContent: React.FC = () => {
                 setIsOnline(online);
             });
 
-            // O usuário mencionou lidar com mais de 1000 pedidos. 
-            // Para manter a performance elite, limitamos a 1000, o que já é massivo para um painel.
-            // Alertas resolvidos muito antigos são ignorados para economizar memória/banda.
+            // Limitamos a 1000 registos para performance.
+            // Ordenação feita no cliente para evitar necessidade de índice composto no Firestore.
             const q = query(
                 collection(db, 'emergencias'),
-                orderBy('timestamp', 'desc'),
                 limit(1000)
             );
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
-                const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
+                const docs = snapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
+                // Ordenar no cliente — mais recente primeiro, sem precisar de índice Firestore
+                docs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
                 setAlerts(docs);
             }, (error: any) => {
                 // Silencia erros conhecidos no web:
@@ -111,7 +111,7 @@ const AppContent: React.FC = () => {
                 </View>
                 <Text style={[tw`text-6xl font-black tracking-tighter mb-2 uppercase`, { color: NEON_YELLOW }]}>GOGOMA</Text>
                 <Text style={tw`text-[10px] text-slate-500 font-black tracking-[0.3em] uppercase mb-1`}>RESPOSTA DE EMERGÊNCIA</Text>
-                <Text style={tw`text-[12px] text-white font-black uppercase tracking-[0.1em]`}>Município de Chimoio</Text>
+
                 <Text style={tw`text-[8px] text-slate-700 font-bold uppercase mt-10`}>Toque para saltar</Text>
                 
                 {!isOnline && (
