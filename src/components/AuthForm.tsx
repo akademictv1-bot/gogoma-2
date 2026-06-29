@@ -88,15 +88,18 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, working, onSubmit, errorMsg, 
                 value={fields.name}
                 onChangeText={fields.setName}
             />
-            <TextInput
-                placeholder="TELEMÓVEL (EX: 841234567)"
-                placeholderTextColor="#475569"
-                keyboardType="phone-pad"
-                maxLength={9}
-                style={tw`w-full bg-[#0d0d10] border border-white/10 rounded-2xl p-4 text-white font-bold text-xl`}
-                value={fields.phone}
-                onChangeText={v => fields.setPhone(v.replace(/\D/g, ''))}
-            />
+            <View style={tw`w-full bg-[#0d0d10] border border-white/10 rounded-2xl flex-row items-center px-4`}>
+                <Text style={tw`text-white/40 font-bold text-xl mr-1`}>+258</Text>
+                <TextInput
+                    placeholder="841234567"
+                    placeholderTextColor="#475569"
+                    keyboardType="phone-pad"
+                    maxLength={9}
+                    style={tw`flex-1 py-4 text-white font-bold text-xl`}
+                    value={fields.phone}
+                    onChangeText={v => fields.setPhone(v.replace(/\D/g, ''))}
+                />
+            </View>
 
             {mode === 'register' && fields.setCity && fields.setNeighborhood && (
                 <View style={tw`flex-row gap-3`}>

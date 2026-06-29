@@ -50,14 +50,16 @@ export const hashValue = (value: string): string => {
 
 /**
  * Valida se um número de telemóvel é moçambicano.
+ * Aceita formatos com ou sem o código do país (+258).
  * Regras:
- *  - Exatamente 9 dígitos
+ *  - Exatamente 9 dígitos (após remover +258 se presente)
  *  - Começa com 82, 83, 84, 85, 86 ou 87
  */
 export const validateMozambiquePhone = (phone: string): boolean => {
     const cleaned = phone.replace(/\D/g, '');
-    if (cleaned.length !== MOZAMBIQUE_PHONE_LENGTH) return false;
-    const prefix = cleaned.substring(0, 2);
+    const normalized = cleaned.startsWith('258') ? cleaned.slice(3) : cleaned;
+    if (normalized.length !== MOZAMBIQUE_PHONE_LENGTH) return false;
+    const prefix = normalized.substring(0, 2);
     return MOZAMBIQUE_PREFIXES.includes(prefix);
 };
 
