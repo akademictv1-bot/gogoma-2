@@ -603,6 +603,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                             <Image source={{ uri: municipioLogo }} style={[tw`w-[85%] h-[85%]`]} contentFit="contain" transition={200} />
                         </View>
                         <Text style={[tw`text-4xl font-black uppercase tracking-tighter text-center`, { color: NEON_YELLOW, textShadowColor: `${NEON_YELLOW}44`, textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 30 }]}>PORTAL{"\n"}CIDADÃO</Text>
+                        <Text style={tw`text-slate-500 text-[10px] font-black mt-3 uppercase tracking-[0.4em] opacity-60 text-center`}>Moçambique Digital • Governo Municipal</Text>
                     </View>
 
                     {authMode !== 'verification' && (
@@ -639,7 +640,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                             <View style={tw`flex-col md:flex-row justify-center items-center gap-x-8 gap-y-3 mb-6 px-4`}>
                                 <Text style={tw`text-slate-400 text-[11px] text-center`}>Contactar: akademictv@gmail.com</Text>
                                 <Text style={tw`text-slate-400 text-[11px] text-center`}>Telefones: +258 82 148 1573 / +258 87 464 4289</Text>
-                                <Text style={tw`text-slate-400 text-[11px] text-center`}>Endereço: Moçambique</Text>
+                                <Text style={tw`text-slate-400 text-[11px] text-center`}>Endereço: Chimoio, Moçambique</Text>
                             </View>
                             <View style={tw`flex-row justify-center items-center flex-wrap gap-x-6 gap-y-4 mb-8 px-4`}>
                                 <TouchableOpacity onPress={() => window.location.href='/privacy.html'} style={tw`px-2 py-1`}>
@@ -654,6 +655,9 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                             </View>
                             <Text style={tw`text-slate-500 text-[10px] text-center mt-2`}>
                                 © 2026 Akademic TV. Todos os direitos reservados.
+                            </Text>
+                            <Text style={tw`text-slate-500 text-[10px] text-center`}>
+                                O sistema também pertence ao Município de Chimoio (CMC).
                             </Text>
 
                         </View>
