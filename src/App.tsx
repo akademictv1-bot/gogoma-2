@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Component } from 'react';
 import { View, TouchableOpacity, Text, SafeAreaView, StatusBar } from 'react-native';
-import { Smartphone, Siren, Wifi, WifiOff, CloudOff } from 'lucide-react-native';
+import { Smartphone, Siren } from 'lucide-react-native';
 import tw from 'twrnc';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -114,13 +114,6 @@ const AppContent: React.FC = () => {
                 <Text style={tw`text-[12px] text-white font-black uppercase tracking-[0.1em]`}>Município de Chimoio</Text>
 
                 <Text style={tw`text-[8px] text-slate-700 font-bold uppercase mt-10`}>Toque para saltar</Text>
-                
-                {!isOnline && (
-                    <View style={tw`absolute bottom-20 flex-row items-center gap-2 bg-red-600/20 px-4 py-2 rounded-full border border-red-600/40`}>
-                        <WifiOff size={12} color="#ef4444" />
-                        <Text style={tw`text-red-500 text-[10px] font-black uppercase`}>Sem Internet</Text>
-                    </View>
-                )}
             </TouchableOpacity>
         );
     }
@@ -148,23 +141,15 @@ const AppContent: React.FC = () => {
                     </TouchableOpacity>
                 </View>
 
-                <View style={tw`flex-row items-center gap-4`}>
+                <View style={tw`flex-row items-center`}>
                     {hasPendingAlerts && viewMode === 'police' && (
                         <View style={tw`flex-row items-center gap-2 bg-red-600/20 px-3 py-1.5 rounded-lg border border-red-600`}>
                             <View style={tw`w-2 h-2 bg-red-500 rounded-full`} />
                             <Text style={tw`text-red-500 font-black tracking-widest text-[9px]`}>SOS ATIVO</Text>
                         </View>
                     )}
-                    {isOnline ? <Wifi size={14} color="#22c55e" /> : <WifiOff size={14} color="#ef4444" />}
                 </View>
             </View>
-
-            {!isOnline && (
-                <View style={tw`bg-red-600 p-2 items-center flex-row justify-center gap-2`}>
-                    <CloudOff size={14} color="white" />
-                    <Text style={tw`text-white text-[10px] font-black uppercase tracking-widest`}>Você está offline. Algumas funções podem estar limitadas.</Text>
-                </View>
-            )}
 
             <View style={tw`flex-1`}>
                 {viewMode === 'citizen' ? (

@@ -1,21 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import { Image } from 'expo-image';
-import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, CloudOff, Camera, X } from 'lucide-react-native';
+import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, Camera, X } from 'lucide-react-native';
 import tw from 'twrnc';
 import * as ImagePicker from 'expo-image-picker';
-import NetInfo from '@react-native-community/netinfo';
 
 import Header from '../components/Header';
 import SOSButton from '../components/SOSButton';
 import AuthForm from '../components/AuthForm';
 
 
-import { db, storage, auth, firebaseConfig } from '../services/firebase';
+import { db, storage, auth } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
+import { RecaptchaVerifier } from 'firebase/auth';
 import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { getCurrentLocation, watchLocation, getAddressFromCoords } from '../services/location';
+import { getCurrentLocation, getHighAccuracyLocation, watchLocation, getAddressFromCoords } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
 import { validateMozambiquePhone } from '../services/cryptoUtils';
 import { sendPushNotification } from '../services/notificationService';
@@ -29,17 +28,13 @@ interface CitizenScreenProps {
 const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isRegistered, setIsRegistered] = useState(false);
-    const [authMode, setAuthMode] = useState<'register' | 'login' | 'verification'>('register');
+    const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
     const [municipioLogo, setMunicipioLogo] = useState("");
 
     const [regName, setRegName] = useState('');
     const [regPhone, setRegPhone] = useState('');
     const [regCity, setRegCity] = useState('');
     const [regNeighborhood, setRegNeighborhood] = useState('');
-    const [smsCode, setSmsCode] = useState<string>('');
-    const [confirmationResult, setConfirmationResult] = useState<any | null>(null);
-
-    const pendingAuthMode = useRef<'register' | 'login'>('register');
 
     const [description, setDescription] = useState('');
     const [selectedType, setSelectedType] = useState<EmergencyType | null>(null);
@@ -219,15 +214,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
 
     const recaptchaId = useRef(`recaptcha-${Date.now()}`).current;
 
-    const getRecaptchaVerifier = () => {
-        if (Platform.OS !== 'web') return null;
-        if (!recaptchaVerifierRef.current) {
-            console.warn("reCAPTCHA não foi inicializado no useEffect");
-        }
-        return recaptchaVerifierRef.current;
-    };
-
-    const requestSMS = async () => {
+    const handleRegisterLogin = async () => {
         if (authMode === 'register' && !regName.trim()) {
             setErrorMsg("O nome é obrigatório.");
             return;
@@ -237,137 +224,52 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
             return;
         }
 
-        if (!isOnline) {
-            console.warn("Aviso: O sistema reporta que o dispositivo pode estar offline.");
-            // Não bloqueamos mais o usuário aqui para garantir que, se houver rede, o app funcione.
-        }
-
         setWorking(true);
         setErrorMsg(null);
-        
+
         try {
-            // Verificar pré-requisitos no Firestore antes de enviar o SMS
             const userDoc = await getDoc(doc(db, 'usuarios', regPhone));
-            
+
             if (authMode === 'register') {
                 if (!regCity.trim() || !regNeighborhood.trim()) throw new Error("Cidade e Bairro são obrigatórios.");
                 if (userDoc.exists()) throw new Error('Este número de telemóvel já está cadastrado.');
-                
+
                 const q = query(collection(db, 'usuarios'), where('name', '==', regName));
                 const qs = await getDocs(q);
                 if (!qs.empty) throw new Error('Este nome já está em uso.');
+
+                // Verificação reCAPTCHA na Web (anti-spam)
+                if (Platform.OS === 'web') {
+                    const verifier = recaptchaVerifierRef.current;
+                    if (verifier) await verifier.verify();
+                }
+
+                const finalProfile: UserProfile = { name: regName, phoneNumber: regPhone, city: regCity, neighborhood: regNeighborhood };
+                await setDoc(doc(db, 'usuarios', regPhone), { ...finalProfile, dataRegisto: Date.now() });
+                await saveUserSession('gogoma_user_profile', finalProfile);
+                setProfile(finalProfile);
+                setIsRegistered(true);
             } else {
                 if (!userDoc.exists()) throw new Error("Telefone não encontrado. Por favor, registe-se.");
+                const finalProfile = userDoc.data() as UserProfile;
+                await saveUserSession('gogoma_user_profile', finalProfile);
+                setProfile(finalProfile);
+                setIsRegistered(true);
             }
-
-            // Enviar SMS
-            if (Platform.OS === 'web') {
-                const appVerifier = getRecaptchaVerifier();
-                if (!appVerifier) throw new Error("reCAPTCHA não disponível. Atualize a página.");
-                const formattedPhone = regPhone.startsWith('+258') ? regPhone : `+258${regPhone}`;
-                const confResult = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-                setConfirmationResult(confResult);
-            } else {
-                // Celular (iOS/Android) usando Firebase Nativo
-                const formattedPhone = regPhone.startsWith('+258') ? regPhone : `+258${regPhone}`;
-                // No Nativo, o signInWithPhoneNumber do @react-native-firebase/auth retorna o confirmationResult diretamente
-                const confirmation = await auth.signInWithPhoneNumber(formattedPhone);
-                setConfirmationResult(confirmation);
-            }
-            
-            pendingAuthMode.current = authMode as 'register' | 'login';
-            setSmsCode('');
-            setAuthMode('verification');
         } catch (err: any) {
-            console.error("Auth Request Error:", err);
+            console.error("Auth Error:", err);
             let friendlyError = "Ocorreu um erro no sistema. Por favor, tente novamente.";
-            
             const msg = (err.message || '').toLowerCase();
-            const code = (err.code || '').toLowerCase();
-            
-            // Nossos próprios erros manuais
             if (msg.includes('obrigatório') || msg.includes('cadastrado') || msg.includes('uso') || msg.includes('encontrado')) {
                 friendlyError = err.message;
             } else if (msg.includes('recaptcha')) {
                 friendlyError = "Falha na verificação de segurança. Por favor, atualize a página e tente novamente.";
-            }
-            // Erros do Firebase (message + code)
-            else if (msg.includes('too-many-requests') || code.includes('too-many-requests')) {
-                friendlyError = "Muitas tentativas de envio. Aguarde alguns minutos e tente novamente.";
-            } else if (msg.includes('invalid-phone-number') || code.includes('invalid-phone-number')) {
-                friendlyError = "O número fornecido é inválido. Verifique se tem 9 dígitos.";
-            } else if (msg.includes('network-request-failed') || msg.includes('offline') || code.includes('network-request-failed')) {
+            } else if (msg.includes('network-request-failed') || msg.includes('offline')) {
                 friendlyError = "Sem ligação à internet. Verifique a sua rede.";
-            } else if (code.includes('invalid-app-credential') || msg.includes('invalid-app-credential')) {
-                friendlyError = "Falha na verificação de segurança das credenciais. Verifique a configuração da aplicação (SHA-256 ou APNs) no Firebase Console.";
-            } else if (msg.includes('billing') || code.includes('billing') || code.includes('quota-exceeded')) {
-                friendlyError = "Serviço de SMS indisponível no momento. Contacte a equipa técnica.";
-            } else if (code.includes('operation-not-allowed')) {
-                friendlyError = "Autenticação por telefone não ativada. Contacte o administrador.";
             }
             setErrorMsg(friendlyError);
         } finally {
             setWorking(false);
-        }
-    };
-
-    const verifySMS = async () => {
-        if (!smsCode || smsCode.length < 6) {
-            setErrorMsg("Insira o código de 6 dígitos.");
-            return;
-        }
-
-        setWorking(true);
-        setErrorMsg(null);
-        try {
-            if (!confirmationResult) throw new Error("Sessão de verificação inválida. Por favor, solicite um novo código.");
-            await confirmationResult.confirm(smsCode);
-
-            // Sucesso na verificação! Salvar/Carregar perfil.
-            let finalProfile: UserProfile;
-            
-            if (pendingAuthMode.current === 'login') {
-                // Foi login — carrega o perfil existente
-                const userDoc = await getDoc(doc(db, 'usuarios', regPhone));
-                finalProfile = userDoc.data() as UserProfile;
-            } else {
-                // Foi registo — cria o perfil novo
-                finalProfile = { name: regName, phoneNumber: regPhone, city: regCity, neighborhood: regNeighborhood };
-                await setDoc(doc(db, 'usuarios', regPhone), { ...finalProfile, dataRegisto: Date.now() });
-            }
-
-            await saveUserSession('gogoma_user_profile', finalProfile);
-            setProfile(finalProfile);
-            setIsRegistered(true);
-        } catch (err: any) {
-            console.error("Verify SMS Error:", err);
-            let friendlyError = "Falha na verificação do código. Tente novamente.";
-            
-            if (err.message) {
-                const msg = err.message.toLowerCase();
-                if (msg.includes('invalid-verification-code')) {
-                    friendlyError = "O código SMS que inseriu está incorreto.";
-                } else if (msg.includes('code-expired')) {
-                    friendlyError = "O código SMS expirou. Por favor, solicite um novo código.";
-                } else if (msg.includes('sessão') || msg.includes('inválida')) {
-                    friendlyError = err.message;
-                } else if (msg.includes('network')) {
-                    friendlyError = "Sem ligação à internet. Verifique a sua rede.";
-                } else {
-                    friendlyError = "Ocorreu um problema ao validar. Por favor, tente novamente.";
-                }
-            }
-            setErrorMsg(friendlyError);
-        } finally {
-            setWorking(false);
-        }
-    };
-
-    const handleAuth = () => {
-        if (authMode === 'verification') {
-            verifySMS();
-        } else {
-            requestSMS();
         }
     };
 
@@ -426,13 +328,33 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     const handleSOS = async () => {
         if (!profile) return;
 
-        const currentAccuracy = gpsAccuracy || 999;
-        const isLowAccuracy = !location || location.lat === 0 || currentAccuracy > 30;
+        if (!isOnline) {
+            Alert.alert("Sem Rede", "Estás offline. Liga-te à internet para enviar o pedido de socorro.");
+            return;
+        }
 
-        await sendSOSAlert(isLowAccuracy);
+        // Forçar leitura GPS fresca com precisão máxima antes de enviar o SOS
+        let freshLoc: any = null;
+        try {
+            freshLoc = await getHighAccuracyLocation();
+            if (freshLoc && freshLoc.lat && freshLoc.lng) {
+                setLocation(freshLoc);
+                setGpsAccuracy(freshLoc.accuracy);
+                setLastGpsUpdate(Date.now());
+                updateGpsQuality(freshLoc.accuracy);
+            }
+        } catch (e) {
+            // Se falhar, mantém a última localização conhecida
+        }
+
+        const loc = freshLoc || location;
+        const acc = freshLoc?.accuracy ?? gpsAccuracy ?? 999;
+        const isLowAccuracy = !loc || loc.lat === 0 || acc > 30;
+
+        await sendSOSAlert(isLowAccuracy, loc);
     };
 
-    const sendSOSAlert = async (isLowAccuracy: boolean) => {
+    const sendSOSAlert = async (isLowAccuracy: boolean, locOverride?: any) => {
         // 0. Verificar Cooldown Local
         const now = Date.now();
         const timeElapsed = now - lastSOSSent;
@@ -451,13 +373,14 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
         setErrorMsg(null);
         try {
             // 1. Criar o documento de emergência IMEDIATAMENTE
+            const loc = locOverride || location;
             const sosDoc = await addDoc(collection(db, 'emergencias'), {
                 userName: profile!.name,
                 contactNumber: profile!.phoneNumber,
                 description: description || "SOS IMEDIATO",
                 location: {
-                    lat: location?.lat || null,
-                    lng: location?.lng || null
+                    lat: loc?.lat || null,
+                    lng: loc?.lng || null
                 },
                 gpsAccuracy: gpsAccuracy || null,
                 isLowAccuracy: isLowAccuracy,
@@ -505,8 +428,8 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                 }
 
                 // b) Resolução de Endereço Real (Reverse Geocode)
-                if (location?.lat && location?.lng) {
-                    const realAddress = await getAddressFromCoords(location.lat, location.lng);
+                if (loc?.lat && loc?.lng) {
+                    const realAddress = await getAddressFromCoords(loc.lat, loc.lng);
                     if (realAddress) {
                         await updateDoc(doc(db, 'emergencias', sosDoc.id), {
                             manualAddress: `${realAddress} (Auto) | ${profile!.city}, ${profile!.neighborhood} (Perfil)`,
@@ -606,30 +529,26 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                         <Text style={tw`text-slate-500 text-[10px] font-black mt-3 uppercase tracking-[0.4em] opacity-60 text-center`}>Moçambique Digital • Governo Municipal</Text>
                     </View>
 
-                    {authMode !== 'verification' && (
-                        <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
-                            <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
-                                <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
-                                <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
+                    <View style={tw`flex-row bg-[#0d0d10] p-1.5 rounded-[24px] mb-6 border border-white/5`}>
+                        <TouchableOpacity onPress={() => setAuthMode('register')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'register' ? NEON_YELLOW : 'transparent' }]}>
+                            <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'register' ? 'black' : '#64748b' }]}>REGISTAR</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setAuthMode('login')} style={[tw`flex-1 py-3 rounded-[18px] items-center`, { backgroundColor: authMode === 'login' ? NEON_YELLOW : 'transparent' }]}>
+                            <Text style={[tw`text-[10px] font-black uppercase`, { color: authMode === 'login' ? 'black' : '#64748b' }]}>ENTRAR</Text>
+                        </TouchableOpacity>
+                    </View>
 
                     <AuthForm
                         mode={authMode}
                         working={working}
-                        onSubmit={handleAuth}
+                        onSubmit={handleRegisterLogin}
                         errorMsg={errorMsg}
                         fields={{
                             name: regName, setName: setRegName,
                             phone: regPhone, setPhone: setRegPhone,
                             city: regCity, setCity: setRegCity,
                             neighborhood: regNeighborhood, setNeighborhood: setRegNeighborhood,
-                            smsCode: smsCode, setSmsCode: setSmsCode
                         }}
-                        onResendSms={requestSMS}
                     />
 
                     {/* Spacer/Push para o rodapé ficar no fundo absoluto do ecrã */}
@@ -786,12 +705,6 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                             </View>
                         )}
 
-                        {!isOnline && (
-                            <View style={tw`mt-2 bg-red-600/20 border border-red-600/40 px-3 py-1.5 rounded-full flex-row items-center gap-2`}>
-                                <CloudOff size={10} color="#ef4444" />
-                                <Text style={tw`text-[8px] font-black text-red-500 uppercase`}>Sem Ligação: Alerta será enviado assim que houver rede</Text>
-                            </View>
-                        )}
                     </View>
 
                     {/* CENTRO: SOS Button e Categorias */}
