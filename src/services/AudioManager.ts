@@ -20,7 +20,7 @@ class AudioManager {
 
     async resumeContext() {
         if (Platform.OS === 'web') {
-            if (!this.audioContext) {
+            if (!this.audioContext || this.audioContext.state === 'closed') {
                 // @ts-ignore
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
@@ -106,7 +106,7 @@ class AudioManager {
     }
 
     private async playWebSound(alarmType: string) {
-        if (!this.audioContext) {
+        if (!this.audioContext || this.audioContext.state === 'closed') {
             // @ts-ignore
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -150,6 +150,49 @@ class AudioManager {
             this.activeOscillators = this.activeOscillators.filter(o => o !== osc);
             try { osc.disconnect(); } catch (_) {}
             try { gain.disconnect(); } catch (_) {}
+        }
+    }
+
+    async playTestSound(alarmType: string = 'emergency') {
+        // Método específico para o botão "TESTAR SOM" — NÃO regista em activeOscillators
+        // para não ser morto pelo stopAllAlarms() do AlarmMonitor
+        if (Platform.OS === 'web') {
+            try {
+                const ctx = this.audioContext || new (window.AudioContext || (window as any).webkitAudioContext)();
+                if (ctx.state === 'suspended') await ctx.resume();
+                const now = ctx.currentTime;
+                const duration = alarmType === 'emergency' ? 1.2 : 2.0;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                if (alarmType === 'emergency') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(600, now);
+                    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + 0.6);
+                    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.9);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + duration);
+                    gain.gain.setValueAtTime(0.01, now);
+                    gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
+                    gain.gain.linearRampToValueAtTime(0.35, now + duration - 0.1);
+                    gain.gain.linearRampToValueAtTime(0.01, now + duration);
+                } else {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(440, now);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+                }
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + duration);
+                await delay(duration * 1000);
+                try { osc.disconnect(); } catch (_) {}
+                try { gain.disconnect(); } catch (_) {}
+            } catch (e) {
+                console.error('[AudioManager] Erro no teste de som:', e);
+            }
+        } else {
+            Vibration.vibrate(alarmType === 'emergency' ? [500, 200, 500, 200, 500] : 500);
         }
     }
 

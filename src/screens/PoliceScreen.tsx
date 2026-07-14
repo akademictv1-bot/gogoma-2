@@ -587,7 +587,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                         </View>
 
                         <TouchableOpacity 
-                            onPress={() => audioManager.resumeContext().then(() => audioManager.playSound('emergency'))} 
+                            onPress={() => audioManager.resumeContext().then(() => audioManager.playTestSound('emergency')).catch(e => console.error('[Audio] Erro no teste de som:', e))} 
                             style={tw`p-2 bg-yellow-600/10 rounded-lg border border-yellow-500/20`}
                         >
                             <WifiOff size={16} color="#fbff00" />
