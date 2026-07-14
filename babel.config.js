@@ -7,7 +7,7 @@ module.exports = function (api) {
         presets: ['babel-preset-expo'],
         plugins: [
             // Remove todos os console.log/warn/error/info em builds de produção
-            ...(isProduction ? [['transform-remove-console', { exclude: [] }]] : []),
+            ...(isProduction ? [['transform-remove-console', { exclude: ['error', 'warn'] }]] : []),
         ],
     };
 };
