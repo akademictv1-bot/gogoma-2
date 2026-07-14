@@ -154,11 +154,11 @@ class AudioManager {
     }
 
     async playTestSound(alarmType: string = 'emergency') {
-        // Método específico para o botão "TESTAR SOM" — NÃO regista em activeOscillators
-        // para não ser morto pelo stopAllAlarms() do AlarmMonitor
         if (Platform.OS === 'web') {
             try {
-                const ctx = this.audioContext || new (window.AudioContext || (window as any).webkitAudioContext)();
+                const ctx = this.audioContext && this.audioContext.state !== 'closed'
+                    ? this.audioContext
+                    : new (window.AudioContext || (window as any).webkitAudioContext)();
                 if (ctx.state === 'suspended') await ctx.resume();
                 const now = ctx.currentTime;
                 const duration = alarmType === 'emergency' ? 1.2 : 2.0;
@@ -172,8 +172,8 @@ class AudioManager {
                     osc.frequency.exponentialRampToValueAtTime(1200, now + 0.9);
                     osc.frequency.exponentialRampToValueAtTime(600, now + duration);
                     gain.gain.setValueAtTime(0.01, now);
-                    gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
-                    gain.gain.linearRampToValueAtTime(0.35, now + duration - 0.1);
+                    gain.gain.linearRampToValueAtTime(0.7, now + 0.05);
+                    gain.gain.linearRampToValueAtTime(0.7, now + duration - 0.1);
                     gain.gain.linearRampToValueAtTime(0.01, now + duration);
                 } else {
                     osc.type = 'sine';
@@ -199,14 +199,22 @@ class AudioManager {
     async playSuccessSound(durationMs: number = 1000) {
         if (Platform.OS === 'web') {
             try {
-                const ctx = this.audioContext || new (window.AudioContext || (window as any).webkitAudioContext)();
+                const ctx = this.audioContext && this.audioContext.state !== 'closed'
+                    ? this.audioContext
+                    : new (window.AudioContext || (window as any).webkitAudioContext)();
                 if (ctx.state === 'suspended') await ctx.resume();
+                const now = ctx.currentTime;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
-                osc.frequency.setValueAtTime(1200, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (durationMs/1000));
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1200, now);
+                gain.gain.setValueAtTime(0.01, now);
+                gain.gain.linearRampToValueAtTime(0.5, now + 0.02);
+                gain.gain.linearRampToValueAtTime(0.5, now + (durationMs/1000) - 0.1);
+                gain.gain.linearRampToValueAtTime(0.01, now + (durationMs/1000));
                 osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(); await delay(durationMs);
+                osc.start(now); osc.stop(now + (durationMs/1000));
+                await delay(durationMs);
                 try { osc.disconnect(); } catch (_) {}
                 try { gain.disconnect(); } catch (_) {}
             } catch (e) {
