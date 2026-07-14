@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Component } from 'react';
-import { View, TouchableOpacity, Text, SafeAreaView, StatusBar } from 'react-native';
+import { View, TouchableOpacity, Text, SafeAreaView, StatusBar, Platform } from 'react-native';
 import { Smartphone, Siren } from 'lucide-react-native';
 import tw from 'twrnc';
 import NetInfo from '@react-native-community/netinfo';
@@ -118,6 +118,17 @@ const AppContent: React.FC = () => {
         );
     }
 
+    // ─── Mobile (iOS/Android): APENAS Cidadão, sem toggle ───────────────
+    if (Platform.OS !== 'web') {
+        return (
+            <SafeAreaView style={tw`flex-1 bg-black`}>
+                <StatusBar barStyle="light-content" />
+                <CitizenScreen isOnline={isOnline} />
+            </SafeAreaView>
+        );
+    }
+
+    // ─── Web: toggle Cidadão / Comando ──────────────────────────────────
     return (
         <SafeAreaView style={tw`flex-1 bg-black`}>
             <StatusBar barStyle="light-content" />

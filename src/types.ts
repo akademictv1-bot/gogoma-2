@@ -57,3 +57,20 @@ export interface EmergencyAlert {
         skip_sound_rule?: boolean;
     };
 }
+
+export interface AuditoriaLog {
+    operadorId: string;
+    emergenciaId: string;
+    acao: 'despacho' | 'resolucao' | 'broadcast';
+    detalhes: string;
+    timestamp: number;
+}
+
+export interface MunicipalAlert {
+    id: string;
+    titulo: string;
+    mensagem: string;
+    prioridade: 'alta' | 'media';
+    timestamp: number;
+    ativo: boolean;
+}

@@ -55,9 +55,21 @@ export const saveOperatorToken = async (id: string, token: string) => {
     }
 };
 
-export const sendPushNotification = async (title: string, body: string) => {
+export const saveCitizenToken = async (phoneNumber: string, token: string) => {
     try {
-        const tokensSnapshot = await getDocs(collection(db, 'operatorTokens'));
+        await setDoc(doc(db, 'citizenTokens', phoneNumber), {
+            token,
+            phoneNumber,
+            updatedAt: Date.now()
+        }, { merge: true });
+    } catch (error) {
+        // Ignora erro ao salvar token
+    }
+};
+
+const sendPushToTokens = async (title: string, body: string, collectionPath: string) => {
+    try {
+        const tokensSnapshot = await getDocs(collection(db, collectionPath));
         const tokens = tokensSnapshot.docs.map(doc => doc.data().token);
 
         if (tokens.length === 0) return;
@@ -82,4 +94,12 @@ export const sendPushNotification = async (title: string, body: string) => {
     } catch (error) {
         console.error("Erro ao enviar notificações push:", error);
     }
+};
+
+export const sendPushNotification = async (title: string, body: string) => {
+    await sendPushToTokens(title, body, 'operatorTokens');
+};
+
+export const sendPushToCitizens = async (title: string, body: string) => {
+    await sendPushToTokens(title, body, 'citizenTokens');
 };

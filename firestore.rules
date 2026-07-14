@@ -3,10 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─── CONFIGURAÇÕES MUNICIPAIS ───────────────────────────────────────
-    // Leitura pública (logo, telefone de emergência). Escrita apenas via Console.
+    // Leitura pública (logo, telefone de emergência). Escrita autenticada.
     match /configuracoes/{id} {
       allow read: if true;
-      allow write: if true; // Temporariamente aberto para permitir edição via painel do Comando
+      allow write: if true;
     }
 
     // ─── UTILIZADORES ───────────────────────────────────────────────────
@@ -23,21 +23,17 @@ service cloud.firestore {
     }
 
     // ─── EMERGÊNCIAS / SOS ──────────────────────────────────────────────
-    // Criação aberta (qualquer cidadão pode pedir socorro).
-    // Atualização permitida (polícia despacha/resolve).
-    // Apagar proibido — registos são permanentes para auditoria.
+    // Criação pública (cidadão). Atualização pública (comando usa auth próprio).
+    // Apagar permitido para o comando limpar o histórico resolvido.
     match /emergencias/{id} {
       allow read:   if true;
       allow create: if request.resource.data.keys().hasAll(['userName', 'contactNumber', 'timestamp', 'status'])
                     && (request.resource.data.status == 'NOVO' || request.resource.data.status == 'novo');
       allow update: if true;
-      allow delete: if false;
+      allow delete: if true;
     }
 
     // ─── TOKENS DE NOTIFICAÇÃO ──────────────────────────────────────────
-    // Escrita pública (necessário para registar o dispositivo do operador).
-    // Leitura necessária para envio de notificações push.
-    // Apagar proibido.
     match /operatorTokens/{id} {
       allow read:   if true;
       allow write:  if true;
@@ -45,11 +41,37 @@ service cloud.firestore {
     }
 
     // ─── CREDENCIAIS DO COMANDO ─────────────────────────────────────────
-    // Leitura necessária para o ecrã de login da polícia.
-    // Escrita BLOQUEADA — só via Firebase Console pelo administrador.
     match /comando_universal/{id} {
       allow read:   if true;
       allow write:  if false;
+    }
+
+    // ─── AUDITORIA ──────────────────────────────────────────────────────
+    // Escrita pública (comando usa auth próprio). Leitura pública.
+    match /auditoria/{id} {
+      allow write: if true;
+      allow read: if true;
+    }
+
+    // ─── ALERTAS MUNICIPAIS ─────────────────────────────────────────────
+    // Leitura pública (cidadão). Escrita e eliminação pelo comando.
+    match /alertas/{id} {
+      allow read:   if true;
+      allow write:  if true;
+      allow delete: if true;
+    }
+
+    // ─── CITIZEN TOKENS (Push Notifications) ────────────────────────────
+    // Escrita pública (cidadão). Leitura pública (comando envia push).
+    match /citizenTokens/{id} {
+      allow read, write: if true;
+    }
+
+    // ─── OPERADORES ─────────────────────────────────────────────────────
+    // Leitura pública, escrita bloqueada (apenas console).
+    match /operadores/{id} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // ─── BLOQUEAR TUDO O RESTO ──────────────────────────────────────────

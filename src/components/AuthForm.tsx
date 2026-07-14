@@ -1,6 +1,13 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from 'react-native';
 import tw from 'twrnc';
+import { ChevronDown } from 'lucide-react-native';
+
+const BAIRROS_CHIMOIO = [
+    'Machava', 'Espangano', '25 de Setembro', 'Cateme', 'Itaquenha',
+    'Muelha', 'Vila Nova', 'Zona Verde', 'Trângulo', 'Missão',
+    'Matica', 'Sambai', 'Fazenda', 'Maguanha', 'Nhamachaca',
+];
 
 interface AuthFormProps {
     mode: 'register' | 'login';
@@ -21,6 +28,7 @@ interface AuthFormProps {
 
 const AuthForm: React.FC<AuthFormProps> = ({ mode, working, onSubmit, errorMsg, fields }) => {
     const NEON_YELLOW = "#fbff00";
+    const [showBairroPicker, setShowBairroPicker] = useState(false);
 
     return (
         <View style={tw`gap-3`}>
@@ -46,20 +54,55 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, working, onSubmit, errorMsg, 
 
             {mode === 'register' && fields.setCity && fields.setNeighborhood && (
                 <View style={tw`flex-row gap-3`}>
-                    <TextInput
-                        placeholder="CIDADE"
-                        placeholderTextColor="#475569"
-                        style={tw`flex-1 bg-[#0d0d10] border border-white/10 rounded-2xl p-4 text-white text-[10px] font-bold uppercase`}
-                        value={fields.city}
-                        onChangeText={fields.setCity}
-                    />
-                    <TextInput
-                        placeholder="BAIRRO"
-                        placeholderTextColor="#475569"
-                        style={tw`flex-1 bg-[#0d0d10] border border-white/10 rounded-2xl p-4 text-white text-[10px] font-bold uppercase`}
-                        value={fields.neighborhood}
-                        onChangeText={fields.setNeighborhood}
-                    />
+                    <TouchableOpacity
+                        onPress={() => { if (fields.setCity) fields.setCity('Chimoio'); }}
+                        style={tw`flex-1 bg-[#0d0d10] border border-white/10 rounded-2xl p-4 flex-row items-center justify-between`}
+                    >
+                        <Text style={[tw`text-[10px] font-bold uppercase`, fields.city ? tw`text-white` : tw`text-[#475569]`]}>
+                            {fields.city || 'CIDADE'}
+                        </Text>
+                        <ChevronDown size={14} color="#475569" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        onPress={() => setShowBairroPicker(true)}
+                        style={tw`flex-1 bg-[#0d0d10] border border-white/10 rounded-2xl p-4 flex-row items-center justify-between`}
+                    >
+                        <Text style={[tw`text-[10px] font-bold uppercase`, fields.neighborhood ? tw`text-white` : tw`text-[#475569]`]}>
+                            {fields.neighborhood || 'BAIRRO'}
+                        </Text>
+                        <ChevronDown size={14} color="#475569" />
+                    </TouchableOpacity>
+
+                    <Modal visible={showBairroPicker} transparent animationType="fade">
+                        <TouchableOpacity
+                            activeOpacity={1}
+                            onPress={() => setShowBairroPicker(false)}
+                            style={tw`flex-1 bg-black/80 items-center justify-center p-6`}
+                        >
+                            <View style={tw`w-full max-w-sm bg-[#0d0d10] rounded-[32px] border border-white/10 overflow-hidden`}>
+                                <View style={tw`p-6 border-b border-white/5`}>
+                                    <Text style={tw`text-white font-black uppercase text-xs tracking-widest text-center`}>SELECIONA O BAIRRO</Text>
+                                </View>
+                                <ScrollView style={tw`max-h-80`}>
+                                    {BAIRROS_CHIMOIO.map((bairro) => (
+                                        <TouchableOpacity
+                                            key={bairro}
+                                            onPress={() => {
+                                                fields.setNeighborhood?.(bairro);
+                                                setShowBairroPicker(false);
+                                            }}
+                                            style={[tw`p-5 border-b border-white/5`, fields.neighborhood === bairro && tw`bg-[#fbff00]/10`]}
+                                        >
+                                            <Text style={[tw`text-sm font-bold uppercase`, fields.neighborhood === bairro ? tw`text-[#fbff00]` : tw`text-white`]}>
+                                                {bairro}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        </TouchableOpacity>
+                    </Modal>
                 </View>
             )}
 

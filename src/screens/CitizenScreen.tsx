@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Linking, Platform, Modal, KeyboardAvoidingView } from 'react-native';
 import { Image } from 'expo-image';
-import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, Camera, X } from 'lucide-react-native';
+import { Shield, Car, CheckCircle, MapPin, Activity, RefreshCcw, Phone, Info, AlertTriangle, WifiOff, Camera, X, Megaphone, List, User } from 'lucide-react-native';
 import tw from 'twrnc';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -17,9 +17,9 @@ import { collection, addDoc, doc, getDoc, onSnapshot, query, where, getDocs, set
 import { getCurrentLocation, getHighAccuracyLocation, watchLocation, getAddressFromCoords } from '../services/location';
 import { saveUserSession, getUserSession, clearUserSession } from '../services/storage';
 import { validateMozambiquePhone } from '../services/cryptoUtils';
-import { sendPushNotification } from '../services/notificationService';
+import { sendPushNotification, registerForPushNotificationsAsync, saveCitizenToken } from '../services/notificationService';
 
-import { EmergencyType, AlertStatus, UserProfile } from '../types';
+import { EmergencyType, AlertStatus, UserProfile, MunicipalAlert, EmergencyAlert } from '../types';
 
 interface CitizenScreenProps {
     isOnline?: boolean;
@@ -55,6 +55,12 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
     const [helpPhone, setHelpPhone] = useState('112');
     const [helpText, setHelpText] = useState('PEÇA SOCORRO IMEDIATO');
     
+    // ─── Perfil / Meus Pedidos / Alertas ────────────────────────────────
+    const [showProfile, setShowProfile] = useState(false);
+    const [showMeusPedidos, setShowMeusPedidos] = useState(false);
+    const [citizenAlerts, setCitizenAlerts] = useState<EmergencyAlert[]>([]);
+    const [alertasMunicipais, setAlertasMunicipais] = useState<MunicipalAlert[]>([]);
+
     const [numeroPessoas, setNumeroPessoas] = useState<number>(1);
     const recaptchaVerifierRef = useRef<any>(null);
 
@@ -70,12 +76,12 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
 
     useEffect(() => {
         // 1. CARREGAMENTO IMEDIATO DO CACHE LOCAL (Instante 0)
-        // Isso garante que o número de telefone correto apareça mesmo sem internet
         const loadCache = async () => {
             try {
-                const [cachedConfig, savedProfile] = await Promise.all([
+                const [cachedConfig, savedProfile, savedCooldown] = await Promise.all([
                     getUserSession('gogoma_config_cache'),
-                    getUserSession('gogoma_user_profile')
+                    getUserSession('gogoma_user_profile'),
+                    getUserSession('gogoma_sos_cooldown')
                 ]);
 
                 if (cachedConfig) {
@@ -87,6 +93,13 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                 if (savedProfile) {
                     setProfile(savedProfile);
                     setIsRegistered(true);
+                }
+
+                if (savedCooldown && typeof savedCooldown === 'number') {
+                    const elapsed = Date.now() - savedCooldown;
+                    if (elapsed < COOLDOWN_TOTAL_MS) {
+                        setLastSOSSent(savedCooldown);
+                    }
                 }
                 setConfigLoaded(true);
             } catch (e) {
@@ -176,6 +189,46 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
         };
     }, []);
 
+    // ─── LISTENER: Alertas Municipais ────────────────────────────────────
+    useEffect(() => {
+        const q = query(collection(db, 'alertas'), where('ativo', '==', true));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MunicipalAlert));
+            const now = Date.now();
+            const recentes = docs.filter(a => (now - a.timestamp) < 60 * 60 * 1000);
+            setAlertasMunicipais(recentes.sort((a, b) => b.timestamp - a.timestamp));
+        }, (err: any) => {
+            const isKnown = err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions');
+            if (!isKnown) console.error('[Alertas] Erro:', err?.message);
+        });
+        return unsub;
+    }, []);
+
+    // ─── LISTENER: Meus Pedidos (apenas quando registado) ────────────────
+    useEffect(() => {
+        if (!profile?.phoneNumber) return;
+        const q = query(
+            collection(db, 'emergencias'),
+            where('contactNumber', '==', profile.phoneNumber)
+        );
+        const unsub = onSnapshot(q, (snapshot) => {
+            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as EmergencyAlert[];
+            docs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            setCitizenAlerts(docs);
+        }, (err: any) => {
+            const isKnown = err?.code === 'permission-denied' || err?.message?.includes('Missing or insufficient permissions');
+            if (!isKnown) console.error('[MeusPedidos] Erro:', err?.message);
+        });
+        return unsub;
+    }, [profile?.phoneNumber]);
+
+    // ─── Registar/actualizar push token sempre que o perfil carregar ────
+    useEffect(() => {
+        if (profile?.phoneNumber) {
+            registerCitizenPush(profile.phoneNumber).catch(() => {});
+        }
+    }, [profile?.phoneNumber]);
+
     useEffect(() => {
         if (lastSOSSent <= 0) {
             setCooldownSeconds(0);
@@ -210,6 +263,14 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
         } else {
             setGpsQuality('none'); // > 100m = Sem sinal
         }
+    };
+
+    const registerCitizenPush = async (phone: string) => {
+        try {
+            if (Platform.OS === 'web') return;
+            const token = await registerForPushNotificationsAsync();
+            if (token) await saveCitizenToken(phone, token);
+        } catch (_) {}
     };
 
     const recaptchaId = useRef(`recaptcha-${Date.now()}`).current;
@@ -249,12 +310,14 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                 await saveUserSession('gogoma_user_profile', finalProfile);
                 setProfile(finalProfile);
                 setIsRegistered(true);
+                registerCitizenPush(regPhone).catch(() => {});
             } else {
                 if (!userDoc.exists()) throw new Error("Telefone não encontrado. Por favor, registe-se.");
                 const finalProfile = userDoc.data() as UserProfile;
                 await saveUserSession('gogoma_user_profile', finalProfile);
                 setProfile(finalProfile);
                 setIsRegistered(true);
+                registerCitizenPush(regPhone).catch(() => {});
             }
         } catch (err: any) {
             console.error("Auth Error:", err);
@@ -413,6 +476,13 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
             // 3. Transição visual imediata para sucesso
             setStep(2);
             setLastSOSSent(Date.now());
+            saveUserSession('gogoma_sos_cooldown', Date.now()).catch(() => {});
+            
+            // Limpar formulário para o próximo pedido
+            setSelectedImages([]);
+            setSelectedType(null);
+            setDescription('');
+            setNumeroPessoas(1);
 
             // 4. Notificação Push SEMPRE disparada para pedidos novos
             sendPushNotification(
@@ -657,7 +727,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
 
                     {/* Botão para voltar ao ecrã principal (sem enviar novo SOS) */}
                     <TouchableOpacity
-                        onPress={() => { setStep(0); setSelectedType(null); setDescription(''); }}
+                        onPress={() => { setStep(0); setSelectedType(null); setDescription(''); setSelectedImages([]); setNumeroPessoas(1); }}
                         style={[tw`mt-6 flex-row items-center gap-3 px-10 py-4 rounded-full border border-white/10`, { backgroundColor: '#0d0d10' }]}
                     >
                         <RefreshCcw size={14} color="#475569" />
@@ -673,9 +743,45 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
             <Header
                 title={profile?.name || "Cidadão"}
                 subtitle={profile?.neighborhood}
-                onAction={() => setShowHelp(!showHelp)}
-                actionIcon={<Info size={18} color={NEON_YELLOW} />}
+                actionIcon={
+                    <View style={tw`flex-row items-center gap-2`}>
+                        <TouchableOpacity onPress={() => setShowMeusPedidos(true)} style={tw`p-2`}>
+                            <List size={18} color="#fbff00" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setShowProfile(true)} style={tw`p-2`}>
+                            <User size={18} color="#fbff00" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setShowHelp(!showHelp)} style={tw`p-2`}>
+                            <Info size={18} color={NEON_YELLOW} />
+                        </TouchableOpacity>
+                    </View>
+                }
             />
+
+            {/* ─── Banner de Alertas Municipais ──────────────────────────── */}
+            {alertasMunicipais.length > 0 && (
+                <View style={tw`px-4 pt-2`}>
+                    {alertasMunicipais.map((alerta) => (
+                        <View
+                            key={alerta.id}
+                            style={[
+                                tw`flex-row items-center gap-3 p-4 rounded-2xl border mb-2`,
+                                alerta.prioridade === 'alta'
+                                    ? tw`bg-red-600/20 border-red-500/40`
+                                    : tw`bg-[#fbff00]/10 border-[#fbff00]/30`
+                            ]}
+                        >
+                            <Megaphone size={16} color={alerta.prioridade === 'alta' ? '#ef4444' : NEON_YELLOW} />
+                            <View style={tw`flex-1`}>
+                                <Text style={[tw`text-[9px] font-black uppercase`, alerta.prioridade === 'alta' ? tw`text-red-500` : tw`text-[#fbff00]`]}>
+                                    {alerta.titulo}
+                                </Text>
+                                <Text style={tw`text-[10px] text-white/60 font-bold mt-1`}>{alerta.mensagem}</Text>
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            )}
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -809,7 +915,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                 </ScrollView>
             </KeyboardAvoidingView>
 
-                {/* Modal de Ajuda / Opções */}
+                {/* ─── Modal de Ajuda (sem logout) ──────────────────────────── */}
                 <Modal visible={showHelp} transparent animationType="fade">
                     <View style={tw`flex-1 bg-black/80 items-center justify-center p-6`}>
                         <View style={tw`w-full max-w-sm bg-[#0d0d10] p-8 rounded-[32px] border border-white/10 shadow-2xl relative`}>
@@ -821,7 +927,7 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                                 <View style={tw`w-16 h-16 bg-[#fbff0020] rounded-full items-center justify-center mb-4 border border-[#fbff0040]`}>
                                     <Info size={28} color={NEON_YELLOW} />
                                 </View>
-                                <Text style={tw`text-xl font-black uppercase text-white tracking-widest text-center`}>AJUDA / OPÇÕES</Text>
+                                <Text style={tw`text-xl font-black uppercase text-white tracking-widest text-center`}>CENTRAL DE AJUDA</Text>
                             </View>
 
                             <View style={tw`bg-[#121216] p-6 rounded-2xl border border-white/5 mb-6`}>
@@ -829,18 +935,104 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
                                 <Text style={tw`text-sm font-bold text-white text-center leading-relaxed`}>{helpText}</Text>
                             </View>
 
-                            <View style={tw`gap-4`}>
-                                <TouchableOpacity onPress={() => makeCall(helpPhone)} style={tw`w-full py-4 bg-green-600 rounded-2xl items-center flex-row justify-center gap-3 shadow-xl`}>
-                                    <Phone size={18} color="white" />
-                                    <Text style={tw`text-white font-black uppercase text-xs tracking-widest`}>LIGAR: {helpPhone}</Text>
-                                </TouchableOpacity>
+                            <Text style={tw`text-[9px] text-white/30 font-bold text-center mb-6 uppercase tracking-wider`}>
+                                Liga para a central em caso de emergência
+                            </Text>
 
-                                <TouchableOpacity onPress={handleLogout} style={tw`w-full py-4 bg-red-600/10 border border-red-500/30 rounded-2xl items-center flex-row justify-center gap-3`}>
-                                    <AlertTriangle size={18} color="#ef4444" />
-                                    <Text style={tw`text-red-500 font-black uppercase text-xs tracking-widest`}>SAIR DA CONTA</Text>
-                                </TouchableOpacity>
-                            </View>
+                            <TouchableOpacity onPress={() => makeCall(helpPhone)} style={tw`w-full py-4 bg-green-600 rounded-2xl items-center flex-row justify-center gap-3 shadow-xl`}>
+                                <Phone size={18} color="white" />
+                                <Text style={tw`text-white font-black uppercase text-xs tracking-widest`}>LIGAR: {helpPhone}</Text>
+                            </TouchableOpacity>
                         </View>
+                    </View>
+                </Modal>
+
+                {/* ─── Modal Perfil/Definições ──────────────────────────────── */}
+                <Modal visible={showProfile} transparent animationType="fade">
+                    <View style={tw`flex-1 bg-black/80 items-center justify-center p-6`}>
+                        <View style={tw`w-full max-w-sm bg-[#0d0d10] p-8 rounded-[32px] border border-white/10 shadow-2xl relative`}>
+                            <TouchableOpacity onPress={() => setShowProfile(false)} style={tw`absolute top-6 right-6 p-2 bg-white/5 rounded-full z-10`}>
+                                <X size={20} color="#64748b" />
+                            </TouchableOpacity>
+
+                            <View style={tw`items-center mb-8`}>
+                                <View style={tw`w-16 h-16 bg-white/5 rounded-full items-center justify-center mb-4 border border-white/10`}>
+                                    <User size={28} color={NEON_YELLOW} />
+                                </View>
+                                <Text style={tw`text-xl font-black uppercase text-white tracking-widest text-center`}>MEU PERFIL</Text>
+                            </View>
+
+                            <View style={tw`bg-[#121216] p-6 rounded-2xl border border-white/5 mb-6 gap-4`}>
+                                <View>
+                                    <Text style={tw`text-[9px] font-black uppercase text-white/40`}>NOME</Text>
+                                    <Text style={tw`text-white font-bold text-base mt-1`}>{profile?.name || '---'}</Text>
+                                </View>
+                                <View>
+                                    <Text style={tw`text-[9px] font-black uppercase text-white/40`}>TELEMÓVEL</Text>
+                                    <Text style={tw`text-white font-bold text-base mt-1`}>+258 {profile?.phoneNumber || '---'}</Text>
+                                </View>
+                                <View>
+                                    <Text style={tw`text-[9px] font-black uppercase text-white/40`}>BAIRRO</Text>
+                                    <Text style={tw`text-white font-bold text-base mt-1`}>{profile?.neighborhood || '---'}</Text>
+                                </View>
+                            </View>
+
+                            <TouchableOpacity onPress={handleLogout} style={tw`w-full py-4 bg-red-600/10 border border-red-500/30 rounded-2xl items-center flex-row justify-center gap-3`}>
+                                <AlertTriangle size={18} color="#ef4444" />
+                                <Text style={tw`text-red-500 font-black uppercase text-xs tracking-widest`}>SAIR DA CONTA</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* ─── Modal Meus Pedidos ────────────────────────────────────── */}
+                <Modal visible={showMeusPedidos} animationType="slide">
+                    <View style={tw`flex-1 bg-[#050507]`}>
+                        <View style={tw`p-4 bg-[#0d0d10] border-b border-white/10 flex-row items-center gap-4`}>
+                            <TouchableOpacity onPress={() => setShowMeusPedidos(false)} style={tw`p-2 bg-white/5 rounded-xl`}>
+                                <X size={20} color="white" />
+                            </TouchableOpacity>
+                            <Text style={tw`text-sm font-black uppercase text-[#fbff00]`}>MEUS PEDIDOS</Text>
+                        </View>
+
+                        {citizenAlerts.length === 0 ? (
+                            <View style={tw`flex-1 items-center justify-center opacity-30 gap-4 p-10`}>
+                                <List size={48} color="white" />
+                                <Text style={tw`text-white font-black text-sm uppercase text-center`}>NENHUM PEDIDO DE SOCORRO</Text>
+                            </View>
+                        ) : (
+                            <ScrollView style={tw`flex-1`}>
+                                {citizenAlerts.map((alert) => {
+                                    const statusColor = alert.status === AlertStatus.NEW ? '#ef4444'
+                                        : alert.status === AlertStatus.IN_PROGRESS ? '#fb923c'
+                                        : '#22c55e';
+                                    const statusLabel = alert.status === AlertStatus.NEW ? 'NOVO'
+                                        : alert.status === AlertStatus.IN_PROGRESS ? 'EM TRÂNSITO'
+                                        : 'RESOLVIDO';
+                                    const statusEmoji = alert.status === AlertStatus.NEW ? '🔴'
+                                        : alert.status === AlertStatus.IN_PROGRESS ? '🟠'
+                                        : '🟢';
+                                    return (
+                                        <View key={alert.id} style={tw`p-6 border-b border-white/5 mx-4`}>
+                                            <View style={tw`flex-row justify-between items-center mb-2`}>
+                                                <View style={[tw`px-3 py-1.5 rounded-full`, { backgroundColor: statusColor + '22', borderColor: statusColor + '55', borderWidth: 1 }]}>
+                                                    <Text style={[tw`text-[9px] font-black uppercase`, { color: statusColor }]}>
+                                                        {statusEmoji} {statusLabel}
+                                                    </Text>
+                                                </View>
+                                                <Text style={tw`text-[9px] text-white/30 font-bold`}>
+                                                    {new Date(alert.timestamp).toLocaleString('pt-MZ')}
+                                                </Text>
+                                            </View>
+                                            <Text style={tw`font-black text-sm uppercase text-white tracking-tight`}>{alert.type}</Text>
+                                            {alert.description && (
+                                                <Text style={tw`text-xs text-white/50 font-bold mt-1`}>{alert.description}</Text>
+                                            )}
+                                        </View>
+                                    );
+                                })}
+                            </ScrollView>
+                        )}
                     </View>
                 </Modal>
         </View>

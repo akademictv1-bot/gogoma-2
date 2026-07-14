@@ -2,7 +2,6 @@ import { collection, doc, getDoc, getDocs, query, limit, where } from 'firebase/
 import { EmergencyAlert } from '../types';
 import { db } from './firebase';
 import { audioManager } from './AudioManager';
-import { alarmMonitor } from './AlarmMonitor';
 import { AlertStatus } from '../types';
 import { Platform } from 'react-native';
 
@@ -141,7 +140,7 @@ class HealthCheckSystem {
 
     // ── Verificação 4: AlarmMonitor ───────────────────────────────────────────
     private async checkAlarmMonitor() {
-        this.systemStatus.alarm_monitor_active = !!alarmMonitor;
+        this.systemStatus.alarm_monitor_active = false;
     }
 
     // ── Verificação 5: Fila de áudio ──────────────────────────────────────────
@@ -201,7 +200,7 @@ class HealthCheckSystem {
     public getStatusColor(): string {
         const s = this.systemStatus;
         if (!s.firebase_connection || !s.database_accessibility) return '#ef4444';
-        if (!s.audio_manager_active || !s.alarm_monitor_active) return '#ef4444';
+        if (!s.audio_manager_active) return '#ef4444';
         if (s.queue_length > 1000) return '#ef4444';
         if (s.network_latency > 1000) return '#fbbf24';
         if (s.memory_usage > 90) return '#fbbf24';

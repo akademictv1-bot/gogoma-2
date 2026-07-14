@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, Linking, Platform, AppState } from 'react-native';
 import { Image } from 'expo-image';
-import { Download, Trash2, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, Settings, WifiOff } from 'lucide-react-native';
+import { Download, Trash2, X, RefreshCcw, ArrowLeft, Lock, LogOut, Archive, MapPin, Settings, WifiOff, Megaphone } from 'lucide-react-native';
 import tw from 'twrnc';
 import { Animated } from 'react-native';
 
 import { db } from '../services/firebase';
-import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch } from 'firebase/firestore';
-import { EmergencyAlert, AlertStatus } from '../types';
+import { onSnapshot, doc, getDoc, updateDoc, setDoc, writeBatch, collection, addDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { EmergencyAlert, AlertStatus, MunicipalAlert } from '../types';
 import { audioManager } from '../services/AudioManager';
 import { alarmMonitor } from '../services/AlarmMonitor';
 import { healthCheck } from '../services/HealthCheckSystem';
 import { decryptValue, hashValue, isCryptoKeyConfigured } from '../services/cryptoUtils';
-import { registerForPushNotificationsAsync, saveOperatorToken } from '../services/notificationService';
+import { registerForPushNotificationsAsync, saveOperatorToken, sendPushToCitizens } from '../services/notificationService';
 import { saveUserSession, getUserSession } from '../services/storage';
 
 import Header from '../components/Header';
@@ -29,13 +29,18 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
     const [password, setPassword] = useState('');
     const [authError, setAuthError] = useState(false);
     const [selectedAlert, setSelectedAlert] = useState<EmergencyAlert | null>(null);
-    const [previousAlertsCount, setPreviousAlertsCount] = useState(0);
+    const previousAlertsCountRef = useRef(0);
     const [activeTab, setActiveTab] = useState<'pending' | 'resolved'>('pending');
     const [showConfig, setShowConfig] = useState(false);
     const [newLogoUrl, setNewLogoUrl] = useState('');
     const [helpPhone, setHelpPhone] = useState('112');
     const [helpText, setHelpText] = useState('PEÇA SOCORRO IMEDIATO');
-    const prevNewAlertsCount = useRef(0);
+    const [showAlertModal, setShowAlertModal] = useState(false);
+    const [alertas, setAlertas] = useState<MunicipalAlert[]>([]);
+    const [alertaTitulo, setAlertaTitulo] = useState('');
+    const [alertaMensagem, setAlertaMensagem] = useState('');
+    const [alertaPrioridade, setAlertaPrioridade] = useState<'alta' | 'media'>('alta');
+    const [editandoAlertaId, setEditandoAlertaId] = useState<string | null>(null);
 
     // Animações de Botão (Elite Feedback)
     const dispatchScale = useRef(new Animated.Value(1)).current;
@@ -165,6 +170,9 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
             
             // ATIVAÇÃO DE ÁUDIO NO PRIMEIRO CLIQUE (ESSENCIAL PARA NAVEGADORES)
             audioManager.resumeContext().catch(e => console.error("Erro ao iniciar áudio:", e));
+            
+            alarmMonitor.start();
+            healthCheck.start();
         } else {
             setAuthError(true);
             setPassword('');
@@ -227,12 +235,12 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
         
         // Se há mais pedidos novos do que havia antes (um novo pedido entrou)
         // ou se acabou de fazer login e já existem pedidos novos
-        if (currentNewAlerts.length > previousAlertsCount && currentNewAlerts.length > 0) {
+        if (currentNewAlerts.length > previousAlertsCountRef.current && currentNewAlerts.length > 0) {
             audioManager.playSound('emergency').catch(e => console.error(e));
         }
         
-        setPreviousAlertsCount(currentNewAlerts.length);
-    }, [alerts, isAuthenticated, previousAlertsCount]);
+        previousAlertsCountRef.current = currentNewAlerts.length;
+    }, [alerts, isAuthenticated]);
 
     // Repetição automática a cada 2 minutos enquanto houver pedidos NOVOS não respondidos
     const alertsRef = useRef(alerts);
@@ -273,6 +281,90 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
         });
         return unsub;
     }, [isAuthenticated]);
+
+    // ─── ALERTAS MUNICIPAIS ─────────────────────────────────────────────
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        const q = query(collection(db, 'alertas'), where('ativo', '==', true));
+        const unsub = onSnapshot(q, (snapshot) => {
+            setAlertas(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as MunicipalAlert)));
+        }, (err: any) => {
+            const isPermission = err?.code === 'permission-denied' ||
+                err?.message?.includes('Missing or insufficient permissions');
+            if (!isPermission) {
+                console.error('[Alertas] Erro:', err?.message);
+            }
+        });
+        return unsub;
+    }, [isAuthenticated]);
+
+    const resetForm = () => {
+        setAlertaTitulo('');
+        setAlertaMensagem('');
+        setAlertaPrioridade('alta');
+        setEditandoAlertaId(null);
+    };
+
+    const handleStartEdit = (alerta: MunicipalAlert) => {
+        setAlertaTitulo(alerta.titulo);
+        setAlertaMensagem(alerta.mensagem);
+        setAlertaPrioridade(alerta.prioridade);
+        setEditandoAlertaId(alerta.id);
+    };
+
+    const handleDeleteAlert = (id: string) => {
+        Alert.alert(
+            'Eliminar Alerta',
+            'Tem a certeza que deseja eliminar este alerta?',
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await deleteDoc(doc(db, 'alertas', id));
+                        } catch (err: any) {
+                            Alert.alert('Erro', 'Não foi possível eliminar o alerta.');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    const handleSaveAlert = async () => {
+        if (!alertaTitulo.trim() || !alertaMensagem.trim()) {
+            Alert.alert('Campos Obrigatórios', 'Preencha o título e a mensagem do alerta.');
+            return;
+        }
+        try {
+            if (editandoAlertaId) {
+                await updateDoc(doc(db, 'alertas', editandoAlertaId), {
+                    titulo: alertaTitulo.trim(),
+                    mensagem: alertaMensagem.trim(),
+                    prioridade: alertaPrioridade,
+                });
+                resetForm();
+                setShowAlertModal(false);
+                Alert.alert('Sucesso', 'Alerta atualizado.');
+            } else {
+                await addDoc(collection(db, 'alertas'), {
+                    titulo: alertaTitulo.trim(),
+                    mensagem: alertaMensagem.trim(),
+                    prioridade: alertaPrioridade,
+                    timestamp: Date.now(),
+                    ativo: true,
+                });
+                sendPushToCitizens(alertaTitulo.trim(), alertaMensagem.trim()).catch(e => console.error('[Push] Falha ao notificar cidadãos:', e));
+                resetForm();
+                setShowAlertModal(false);
+                Alert.alert('Sucesso', 'Alerta publicado.');
+            }
+        } catch (err: any) {
+            Alert.alert('Erro', 'Não foi possível guardar o alerta.');
+        }
+    };
 
     const downloadCSV = () => {
         const historyAlerts = alerts.filter(a => a.status === AlertStatus.RESOLVED);
@@ -358,10 +450,12 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
     useEffect(() => {
         if (!isAuthenticated) {
             audioManager.stopAllAlarms();
+            alarmMonitor.stop();
         }
 
         return () => {
             audioManager.stopAllAlarms();
+            alarmMonitor.stop();
         };
     }, [isAuthenticated]);
 
@@ -498,6 +592,11 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                         >
                             <WifiOff size={16} color="#fbff00" />
                             <Text style={tw`text-[#fbff00] text-[7px] font-black uppercase mt-0.5`}>TESTAR SOM</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity onPress={() => setShowAlertModal(true)} style={tw`p-2 bg-blue-600/10 rounded-lg border border-blue-500/20`}>
+                            <Megaphone size={16} color="#60a5fa" />
+                            <Text style={tw`text-blue-400 text-[7px] font-black uppercase mt-0.5`}>ALERTAR</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity onPress={async () => {
@@ -745,6 +844,108 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                             >
                                 <Text style={tw`text-black font-black uppercase text-xs tracking-widest`}>SALVAR E APLICAR</Text>
                             </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Modal Alertas Municipais */}
+            <Modal visible={showAlertModal} transparent animationType="fade">
+                <View style={tw`flex-1 items-center justify-center p-6 bg-black/95`}>
+                    <View style={tw`w-full max-w-md bg-[#121216] rounded-[40px] p-10 border border-white/10 shadow-2xl relative`}>
+                        <TouchableOpacity onPress={() => { resetForm(); setShowAlertModal(false); }} style={tw`absolute top-8 right-8`}>
+                            <X size={24} color="#64748b" />
+                        </TouchableOpacity>
+
+                        <View style={tw`flex-row items-center gap-4 mb-8`}>
+                            <Megaphone size={24} color="#60a5fa" />
+                            <Text style={tw`text-xl font-black uppercase tracking-widest text-blue-400`}>MEGAFONE</Text>
+                        </View>
+
+                        {/* Lista de alertas ativos */}
+                        {alertas.length > 0 && (
+                            <View style={tw`mb-8`}>
+                                <Text style={tw`text-[9px] font-black uppercase text-white/30 mb-3 ml-2`}>ALERTAS ACTIVOS</Text>
+                                <View style={tw`gap-2 max-h-40`}>
+                                    <ScrollView>
+                                        {alertas.map(alerta => (
+                                            <View key={alerta.id} style={tw`flex-row items-center gap-2 px-4 py-3 bg-black/40 rounded-2xl border border-white/5`}>
+                                                <View style={tw`flex-1 min-w-0`}>
+                                                    <Text style={tw`text-white font-black text-[10px] uppercase leading-tight`} numberOfLines={1}>{alerta.titulo}</Text>
+                                                    <Text style={tw`text-white/40 text-[8px] font-bold`} numberOfLines={1}>{alerta.mensagem}</Text>
+                                                </View>
+                                                <TouchableOpacity onPress={() => handleStartEdit(alerta)} style={tw`p-2 bg-blue-600/10 rounded-lg border border-blue-500/20`}>
+                                                    <Text style={tw`text-blue-400 text-[7px] font-black uppercase`}>EDITAR</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity onPress={() => handleDeleteAlert(alerta.id)} style={tw`p-2 bg-red-600/10 rounded-lg border border-red-500/20`}>
+                                                    <Text style={tw`text-red-500 text-[7px] font-black uppercase`}>APAGAR</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Formulário */}
+                        <View style={tw`gap-5`}>
+                            <Text style={tw`text-[9px] font-black uppercase text-white/30 ml-2`}>
+                                {editandoAlertaId ? 'EDITAR ALERTA' : 'NOVO ALERTA'}
+                            </Text>
+                            <View>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/40 mb-2 ml-2`}>TÍTULO</Text>
+                                <TextInput
+                                    placeholder="Ex: AVISO MUNICIPAL"
+                                    placeholderTextColor="#4b5563"
+                                    style={tw`w-full bg-black border border-white/5 rounded-2xl py-4 px-5 text-sm font-bold text-white outline-none`}
+                                    value={alertaTitulo}
+                                    onChangeText={setAlertaTitulo}
+                                />
+                            </View>
+                            <View>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/40 mb-2 ml-2`}>MENSAGEM</Text>
+                                <TextInput
+                                    placeholder="Descreva o alerta para os cidadãos..."
+                                    placeholderTextColor="#4b5563"
+                                    multiline
+                                    numberOfLines={3}
+                                    style={tw`w-full bg-black border border-white/5 rounded-2xl py-4 px-5 text-sm font-bold text-white outline-none min-h-[80px]`}
+                                    value={alertaMensagem}
+                                    onChangeText={setAlertaMensagem}
+                                />
+                            </View>
+                            <View>
+                                <Text style={tw`text-[10px] font-black uppercase text-white/40 mb-2 ml-2`}>PRIORIDADE</Text>
+                                <View style={tw`flex-row gap-3`}>
+                                    <TouchableOpacity
+                                        onPress={() => setAlertaPrioridade('alta')}
+                                        style={[tw`flex-1 py-4 rounded-2xl border items-center`, alertaPrioridade === 'alta' ? tw`bg-red-600/20 border-red-500` : tw`bg-black border-white/10`]}
+                                    >
+                                        <Text style={[tw`text-[10px] font-black uppercase`, alertaPrioridade === 'alta' ? tw`text-red-500` : tw`text-white/30`]}>ALTA</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        onPress={() => setAlertaPrioridade('media')}
+                                        style={[tw`flex-1 py-4 rounded-2xl border items-center`, alertaPrioridade === 'media' ? tw`bg-[#fbff00]/10 border-[#fbff00]` : tw`bg-black border-white/10`]}
+                                    >
+                                        <Text style={[tw`text-[10px] font-black uppercase`, alertaPrioridade === 'media' ? tw`text-[#fbff00]` : tw`text-white/30`]}>MÉDIA</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                            <View style={tw`flex-row gap-3`}>
+                                {editandoAlertaId && (
+                                    <TouchableOpacity onPress={resetForm} style={tw`flex-1 py-5 bg-white/5 border border-white/10 rounded-3xl items-center`}>
+                                        <Text style={tw`text-white/60 font-black uppercase text-[10px]`}>CANCELAR</Text>
+                                    </TouchableOpacity>
+                                )}
+                                <TouchableOpacity
+                                    onPress={handleSaveAlert}
+                                    style={tw`flex-1 py-5 bg-blue-600 rounded-3xl items-center shadow-2xl border-b-4 border-blue-800`}
+                                >
+                                    <Text style={tw`text-white font-black uppercase text-[10px] tracking-widest`}>
+                                        {editandoAlertaId ? 'ACTUALIZAR' : 'PUBLICAR'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
                 </View>
