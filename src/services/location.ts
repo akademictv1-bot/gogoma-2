@@ -46,7 +46,34 @@ export const getHighAccuracyLocation = async () => {
         throw new Error('Permissão de localização negada');
     }
 
-    // Força uma leitura fresca do GPS com precisão máxima, ignorando cache
+    // Tenta até 3 vezes com 2s de espera para o GPS convergir para melhor precisão
+    for (let i = 0; i < 3; i++) {
+        try {
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.Highest,
+            });
+
+            const acc = location.coords.accuracy;
+            // Se a precisão for boa (≤15m) ou já é a última tentativa, devolve
+            if (acc !== null && acc <= 15) {
+                return {
+                    lat: location.coords.latitude,
+                    lng: location.coords.longitude,
+                    accuracy: acc,
+                };
+            }
+
+            if (i < 2) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        } catch (e) {
+            if (i < 2) {
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+    }
+
+    // Última tentativa — devolve o que vier
     const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Highest,
     });

@@ -396,22 +396,30 @@ const CitizenScreen: React.FC<CitizenScreenProps> = ({ isOnline = true }) => {
             return;
         }
 
-        // Forçar leitura GPS fresca com precisão máxima antes de enviar o SOS
-        let freshLoc: any = null;
-        try {
-            freshLoc = await getHighAccuracyLocation();
-            if (freshLoc && freshLoc.lat && freshLoc.lng) {
-                setLocation(freshLoc);
-                setGpsAccuracy(freshLoc.accuracy);
-                setLastGpsUpdate(Date.now());
-                updateGpsQuality(freshLoc.accuracy);
+        // Usar a localização do watchLocation (já em execução com precisão máxima)
+        // Só pede uma leitura fresca se a actual for antiga (>15s) ou nula
+        let loc = location;
+        let acc = gpsAccuracy ?? 999;
+        const locationAge = Date.now() - lastGpsUpdate;
+
+        if (!loc?.lat || locationAge > 15000 || !gpsAccuracy) {
+            try {
+                const freshLoc = await getHighAccuracyLocation();
+                if (freshLoc && freshLoc.lat && freshLoc.lng) {
+                    setLocation(freshLoc);
+                    setGpsAccuracy(freshLoc.accuracy);
+                    setLastGpsUpdate(Date.now());
+                    updateGpsQuality(freshLoc.accuracy);
+                    loc = freshLoc;
+                    acc = freshLoc.accuracy ?? 999;
+                }
+            } catch (e) {
+                // Se falhar, mantém a última localização conhecida
             }
-        } catch (e) {
-            // Se falhar, mantém a última localização conhecida
+        } else {
+            acc = gpsAccuracy;
         }
 
-        const loc = freshLoc || location;
-        const acc = freshLoc?.accuracy ?? gpsAccuracy ?? 999;
         const isLowAccuracy = !loc || loc.lat === 0 || acc > 30;
 
         await sendSOSAlert(isLowAccuracy, loc);
