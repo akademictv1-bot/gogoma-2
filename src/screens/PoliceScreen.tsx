@@ -347,6 +347,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                 });
                 resetForm();
                 setShowAlertModal(false);
+                audioManager.resumeContext().then(() => audioManager.playSuccessSound(600)).catch(() => {});
                 Alert.alert('Sucesso', 'Alerta atualizado.');
             } else {
                 await addDoc(collection(db, 'alertas'), {
@@ -359,6 +360,7 @@ const PoliceScreen: React.FC<PoliceScreenProps> = ({ alerts, isOnline = true }) 
                 sendPushToCitizens(alertaTitulo.trim(), alertaMensagem.trim()).catch(e => console.error('[Push] Falha ao notificar cidadãos:', e));
                 resetForm();
                 setShowAlertModal(false);
+                audioManager.resumeContext().then(() => audioManager.playSuccessSound(600)).catch(() => {});
                 Alert.alert('Sucesso', 'Alerta publicado.');
             }
         } catch (err: any) {

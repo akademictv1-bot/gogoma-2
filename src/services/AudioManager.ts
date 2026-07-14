@@ -198,13 +198,20 @@ class AudioManager {
 
     async playSuccessSound(durationMs: number = 1000) {
         if (Platform.OS === 'web') {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.frequency.setValueAtTime(1200, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (durationMs/1000));
-            osc.connect(gain); gain.connect(ctx.destination);
-            osc.start(); await delay(durationMs);
+            try {
+                const ctx = this.audioContext || new (window.AudioContext || (window as any).webkitAudioContext)();
+                if (ctx.state === 'suspended') await ctx.resume();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.setValueAtTime(1200, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (durationMs/1000));
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.start(); await delay(durationMs);
+                try { osc.disconnect(); } catch (_) {}
+                try { gain.disconnect(); } catch (_) {}
+            } catch (e) {
+                console.error('[AudioManager] Erro no som de sucesso:', e);
+            }
         } else {
             Vibration.vibrate(200);
         }
