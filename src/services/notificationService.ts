@@ -69,28 +69,33 @@ export const saveCitizenToken = async (phoneNumber: string, token: string) => {
 
 const sendPushToTokens = async (title: string, body: string, collectionPath: string) => {
     try {
+        const BATCH_SIZE = 500;
         const tokensSnapshot = await getDocs(collection(db, collectionPath));
-        const tokens = tokensSnapshot.docs.map(doc => doc.data().token);
+        const allTokens = tokensSnapshot.docs.map(doc => doc.data().token);
 
-        if (tokens.length === 0) return;
+        if (allTokens.length === 0) return;
 
-        const messages = tokens.map(token => ({
-            to: token,
-            sound: 'default',
-            title: title,
-            body: body,
-            data: { someData: 'goes here' },
-        }));
+        // Envia em lotes para evitar timeout e limites de taxa
+        for (let i = 0; i < allTokens.length; i += BATCH_SIZE) {
+            const batch = allTokens.slice(i, i + BATCH_SIZE);
+            const messages = batch.map(token => ({
+                to: token,
+                sound: 'default',
+                title: title,
+                body: body,
+                data: { someData: 'goes here' },
+            }));
 
-        await fetch('https://exp.host/--/api/v2/push/send', {
-            method: 'POST',
-            headers: {
-                Accept: 'application/json',
-                'Accept-encoding': 'gzip, deflate',
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(messages),
-        });
+            await fetch('https://exp.host/--/api/v2/push/send', {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Accept-encoding': 'gzip, deflate',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(messages),
+            });
+        }
     } catch (error) {
         console.error("Erro ao enviar notificações push:", error);
     }

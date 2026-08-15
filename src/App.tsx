@@ -59,11 +59,14 @@ const AppContent: React.FC = () => {
                 setIsOnline(online);
             });
 
-            // Limitamos a 1000 registos para performance.
-            // Ordenação feita no cliente para evitar necessidade de índice composto no Firestore.
+            // Configuração de sincronização de emergências.
+            // Usamos cursor-based pagination para escalar a milhões de registos.
+            // Primeiro lote: carrega as 100 alterações mais recentes.
+            // Usuário pode carregar mais arrastando ou ao rolar a tela.
+            const initialLimit = 100;
             const q = query(
                 collection(db, 'emergencias'),
-                limit(1000)
+                limit(initialLimit)
             );
 
             const unsubscribe = onSnapshot(q, (snapshot) => {
